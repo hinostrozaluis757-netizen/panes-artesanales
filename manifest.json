@@ -1,0 +1,17 @@
+{
+  "id": "don-roberto-tienda",
+  "name": "Don Roberto Panes Artesanales",
+  "short_name": "Don Roberto",
+  "description": "Pancitos artesanales recién salidos del horno.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FDFBF7",
+  "theme_color": "#1B4D3E",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3014/3014521.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

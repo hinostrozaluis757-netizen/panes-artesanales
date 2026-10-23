@@ -1,0 +1,17 @@
+{
+  "id": "don-roberto-admin",
+  "name": "Admin Don Roberto",
+  "short_name": "Admin Panes",
+  "description": "Panel de gestión de ventas.",
+  "start_url": "./admin.html",
+  "display": "standalone",
+  "background_color": "#f5f6fa",
+  "theme_color": "#1B4D3E",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/921/921529.png", 
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

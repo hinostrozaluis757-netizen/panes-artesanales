@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Don Roberto - Panes artesanales al horno de barro en la Panamericana Sur. Pancitos rellenos y sánguches a la leña. Pucusana Km 56.8 y Chilca Km 57.4.">
+  <title>Don Roberto - Panes Artesanales | Tradición en cada camino</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1B4D3E">
+</head>
+<body>
+
+  <!-- Sprite SVG del Horno -->
+  <svg style="display: none;">
+    <symbol id="horno-don-roberto" viewBox="0 0 120 75">
+      <path d="M12 65 C12 22, 108 22, 108 65 Z" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M82 28 L82 14 L92 14 L92 33" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M22 45 Q60 35 98 45" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.75"/>
+      <path d="M32 30 Q60 24 88 30" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.75"/>
+      <line x1="60" y1="18" x2="60" y2="30" stroke="currentColor" stroke-width="2.5" opacity="0.75"/>
+      <line x1="42" y1="31" x2="38" y2="43" stroke="currentColor" stroke-width="2.5" opacity="0.75"/>
+      <line x1="78" y1="31" x2="82" y2="43" stroke="currentColor" stroke-width="2.5" opacity="0.75"/>
+      <path d="M40 65 C40 43, 80 43, 80 65 Z" fill="currentColor"/>
+      <path d="M60 49 C55 55, 53 60, 60 63 C67 60, 65 55, 60 49 Z" fill="#D9822B"/>
+      <line x1="4" y1="66" x2="116" y2="66" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+    </symbol>
+  </svg>
+
+  <!-- Barra Superior -->
+  <div class="top-bar">
+    <div class="container d-flex justify-content-between align-items-center flex-wrap">
+      <div><i class="bi bi-geo-alt-fill text-warning me-1"></i> Panamericana Sur: <strong>Km 56.8 (Pucusana)</strong> y <strong>Km 57.4 (Chilca)</strong></div>
+      <div>
+        <span class="me-3"><i class="bi bi-star-fill text-warning me-1"></i> 96% recomendado en Facebook</span>
+        <span><i class="bi bi-envelope-fill text-warning me-1"></i> panes.donroberto@gmail.com</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container">
+      
+      <!-- LOGO -->
+      <a class="brand-logo-container" href="#inicio">
+        <div class="logo-badge-circle" style="color: var(--verde-bosque);">
+          <svg width="38" height="26"><use href="#horno-don-roberto"></use></svg>
+        </div>
+        <div class="brand-text-wrapper">
+          <span class="brand-main-name">Don Roberto</span>
+          <span class="brand-sub-name">• Panes Artesanales •</span>
+        </div>
+      </a>
+
+      <!-- CARRITO Y MENÚ HAMBURGUESA (Siempre visibles en celular) -->
+      <div class="d-flex align-items-center gap-2 order-lg-last">
+        <button class="btn-cart w-auto px-3 gap-1" type="button" data-bs-toggle="modal" data-bs-target="#trackOrderModal" aria-label="Mi Pedido">
+          <i class="bi bi-receipt fs-5"></i>
+          <span class="small fw-bold">Mi Pedido</span>
+        </button>
+        <button class="btn-cart position-relative" type="button" data-bs-toggle="offcanvas" data-bs-target="#cartOffcanvas" aria-label="Ver carrito">
+          <i class="bi bi-cart3 fs-5"></i>
+          <span class="cart-badge" id="cartCount">0</span>
+        </button>
+        
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+      </div>
+
+      <!-- ENLACES (Se ocultan en celular hasta que tocas las rayitas) -->
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav mx-auto">
+          <li class="nav-item"><a class="nav-link" href="#inicio">Inicio</a></li>
+          <li class="nav-item"><a class="nav-link" href="#carta">Carta Completa</a></li>
+          <li class="nav-item"><a class="nav-link" href="#locales">Locales y Mapas</a></li>
+          <li class="nav-item"><a class="nav-link" href="#delivery">Delivery</a></li>
+        </ul>
+
+        <!-- Botón de WhatsApp (Este sí puede ir dentro del menú en celular) -->
+        <a href="https://wa.me/51926549398?text=Hola%20Don%20Roberto,%20quisiera%20hacer%20un%20pedido" target="_blank" class="btn btn-whatsapp-nav mt-3 mt-lg-0">
+          <i class="bi bi-whatsapp me-1"></i> Pedir al 926 549 398
+        </a>
+      </div>
+      
+    </div>
+  </nav>
+
+  <!-- HERO (Fondo apetitoso) -->
+  <section id="inicio" class="hero-section text-center" style="background: linear-gradient(rgba(18, 53, 42, 0.6), rgba(18, 53, 42, 0.8)), url('https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1920&q=80') center/cover no-repeat;">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-lg-8">
+          <div class="hero-logo-emblem" style="color: var(--verde-bosque);">
+            <svg width="65" height="42"><use href="#horno-don-roberto"></use></svg>
+            <div class="emblem-title">Don Roberto</div>
+            <div class="emblem-sub">Panes Artesanales</div>
+          </div>
+          <span class="hero-badge"><i class="bi bi-fire text-warning me-1"></i> HORNO DE BARRO TRADICIONAL</span>
+          <h1 class="hero-title">Tradición en cada camino</h1>
+          <p class="lead mb-4 fs-5 text-light opacity-90">Especialistas en pancitos artesanales rellenos recién salidos del horno y sánguches de chicharrón a la leña.</p>
+          <div class="d-flex justify-content-center gap-3 flex-wrap">
+            <a href="#carta" class="btn btn-hero-primary"><i class="bi bi-journal-richtext me-1"></i> Ver Carta Completa</a>
+            <a href="#locales" class="btn btn-hero-outline">Ubicación y Horarios</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CARTA (CON PESTAÑAS DINÁMICAS) -->
+  <section id="carta" class="section-padding">
+    <div class="container">
+      <div class="text-center mb-4">
+        <span class="text-uppercase fw-bold" style="color: var(--dorado-pan); letter-spacing: 2px; font-size: 0.85rem;">Horneados todos los días desde las 5:00 a.m.</span>
+        <h2 class="section-title display-6">Nuestra Carta Artesanal</h2>
+      </div>
+
+      <!-- MENÚ DE PESTAÑAS (TABS) -->
+      <div class="category-nav" id="category-menu">
+        <button class="category-pill active" data-target="cat-salados">🥖 Panes Salados</button>
+        <button class="category-pill" data-target="cat-dulces">🥨 Panes Dulces</button>
+        <button class="category-pill" data-target="cat-sanguches">🥪 Sánguches</button>
+        <button class="category-pill" data-target="cat-combos">☕ Combos y Bebidas</button>
+      </div>
+
+      <!-- 1. Salados (Visible al cargar) -->
+      <div id="cat-salados" class="category-section">
+        <div class="category-header">
+          <h3 class="h3 fw-bold mb-1" style="color: var(--verde-bosque);">1. Panes Rellenos Salados</h3>
+          <p class="text-muted small mb-0">Horneados al momento en horno de barro</p>
+        </div>
+        <div class="row g-4 mb-5" id="lista-salados"></div>
+      </div>
+
+      <!-- 2. Dulces (Oculto) -->
+      <div id="cat-dulces" class="category-section d-none">
+        <div class="category-header">
+          <h3 class="h3 fw-bold mb-1" style="color: var(--verde-bosque);">2. Panes Dulces & Bolsas</h3>
+        </div>
+        <div class="row g-4 mb-5" id="lista-dulces"></div>
+      </div>
+
+      <!-- 3. Sánguches (Oculto) -->
+      <div id="cat-sanguches" class="category-section d-none">
+        <div class="category-header">
+          <h3 class="h3 fw-bold mb-1" style="color: var(--verde-bosque);">3. Sánguches a la Leña</h3>
+        </div>
+        <div class="row g-4 mb-5" id="lista-sanguches"></div>
+      </div>
+
+      <!-- 4. Combos (Oculto) -->
+      <div id="cat-combos" class="category-section d-none">
+        <div class="category-header">
+          <h3 class="h3 fw-bold mb-1" style="color: var(--verde-bosque);">4. Combos y Bebidas</h3>
+        </div>
+        <div class="row g-4 mb-5" id="lista-bebidas"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- LOCALES -->
+  <section id="locales" class="section-padding bg-crema">
+    <div class="container">
+      <div class="text-center mb-5">
+        <span class="text-uppercase fw-bold" style="color: var(--dorado-pan); letter-spacing: 2px; font-size: 0.85rem;">Ubicación Exacta</span>
+        <h2 class="section-title display-6">Nuestros Locales y Horarios</h2>
+      </div>
+      <div class="row g-4">
+        <div class="col-lg-6">
+          <div class="card-location">
+            <h3 class="h4 fw-bold mb-2">Local 1: Pucusana</h3>
+            <p class="text-muted mb-3"><i class="bi bi-geo-alt-fill text-danger me-1"></i> <strong>Km 56.8 Panamericana Sur</strong></p>
+            <div class="map-container">
+              <iframe src="https://www.google.com/maps?q=Grifo+Petroamerica+Km+56.8+Panamericana+Sur+Pucusana&output=embed" width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy"></iframe>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="card-location retorno">
+            <h3 class="h4 fw-bold mb-2">Local 2: Chilca</h3>
+            <p class="text-muted mb-3"><i class="bi bi-geo-alt-fill text-danger me-1"></i> <strong>Km 57.4 Panamericana Sur</strong></p>
+            <div class="map-container">
+              <iframe src="https://www.google.com/maps?q=Grifo+Petroamerica+Km+57.4+Panamericana+Sur+Chilca&output=embed" width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy"></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DELIVERY -->
+  <section id="delivery" class="section-padding">
+    <div class="container">
+      <div class="delivery-banner">
+        <div class="row align-items-center g-4">
+          <div class="col-lg-7">
+            <h2 class="display-6 fw-bold mb-3">Delivery en Lima y Sur Chico</h2>
+            <p class="mb-4 opacity-90">Envíos en Lima Metropolitana de lunes a sábado previa coordinación por WhatsApp.</p>
+          </div>
+          <div class="col-lg-5 text-center">
+            <div class="p-4 rounded-4 bg-white text-dark shadow">
+              <h5 class="fw-bold mb-1">Pedidos Directos por WhatsApp</h5>
+              <div class="fs-3 fw-bold mb-3" style="color: var(--verde-bosque);">
+                <i class="bi bi-whatsapp text-success me-1"></i> 926 549 398
+              </div>
+              <a href="https://wa.me/51926549398" target="_blank" class="btn btn-whatsapp-nav w-100 py-2">Escribir por WhatsApp</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container">
+      <div class="row g-4 mb-4 align-items-center">
+        <div class="col-md-5">
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <div style="color: var(--crema-fondo);"><svg width="52" height="36"><use href="#horno-don-roberto"></use></svg></div>
+            <div>
+              <h4 class="fw-bold text-white mb-0">Don Roberto</h4>
+              <span class="small text-warning fw-bold" style="letter-spacing: 2px; font-size: 0.7rem;">PANES ARTESANALES</span>
+            </div>
+          </div>
+          <p class="small opacity-75 mb-0">Restaurante rural especializado en pancitos artesanales al horno de barro y sánguches a la leña.</p>
+        </div>
+        <div class="col-md-4">
+          <h6 class="text-uppercase fw-bold mb-2" style="color: var(--dorado-pan);">Contacto Oficial</h6>
+          <ul class="list-unstyled small opacity-90 mb-0">
+            <li class="mb-1"><i class="bi bi-whatsapp me-2 text-warning"></i> 926 549 398</li>
+            <li class="mb-1"><i class="bi bi-envelope me-2 text-warning"></i> panes.donroberto@gmail.com</li>
+            <li><i class="bi bi-geo-alt me-2 text-warning"></i> Pucusana (Km 56.8) y Chilca (Km 57.4)</li>
+          </ul>
+        </div>
+        <div class="col-md-3">
+          <h6 class="text-uppercase fw-bold mb-2" style="color: var(--dorado-pan);">Redes</h6>
+          <a href="https://www.facebook.com/PanesArtesanalesDonRoberto/" target="_blank" class="btn btn-outline-light btn-sm rounded-pill px-3"><i class="bi bi-facebook me-1"></i> Facebook</a>
+        </div>
+      </div>
+      <hr class="opacity-25">
+      <div class="text-center small opacity-75">© 2026 Don Roberto Panes Artesanales. Todos los derechos reservados.</div>
+    </div>
+  </footer>
+
+  <a href="https://wa.me/51926549398" target="_blank" class="whatsapp-float" title="Pedir por WhatsApp"><i class="bi bi-whatsapp"></i></a>
+
+  <!-- OFFCANVAS: CARRITO -->
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="cartOffcanvas">
+    <div class="offcanvas-header border-bottom">
+      <h5 class="offcanvas-title fw-bold"><i class="bi bi-cart3 me-2"></i>Mi Pedido</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body d-flex flex-column" id="cartBody">
+      <div id="cartItems"></div>
+      <div id="cartEmpty" class="text-center my-auto py-5">
+        <i class="bi bi-basket" style="font-size: 4rem; color: #ccc;"></i>
+        <p class="mt-3 text-muted">Tu carrito está vacío</p>
+      </div>
+    </div>
+    <div class="offcanvas-footer border-top p-3" id="cartFooter" style="display:none;">
+      <div class="d-flex justify-content-between mb-2"><span class="fw-bold">Subtotal:</span><span class="fw-bold" id="cartSubtotal">S/ 0.00</span></div>
+      <button class="btn btn-whatsapp-nav w-100 py-2 mb-2" id="btnCheckout"><i class="bi bi-credit-card me-1"></i> Proceder al pago</button>
+    </div>
+  </div>
+
+  <!-- MODAL: CHECKOUT -->
+  <div class="modal fade" id="checkoutModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header" style="background-color: var(--verde-bosque); color: white;">
+          <h5 class="modal-title fw-bold"><i class="bi bi-bag-check me-2"></i>Finalizar Pedido</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <h6 class="fw-bold mb-3" style="color: var(--verde-bosque);"><span class="step-badge">1</span> Datos de contacto</h6>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6"><label class="form-label small fw-bold">Nombre completo *</label><input type="text" class="form-control" id="cNombre" placeholder="Ej: Juan Pérez"></div>
+            <div class="col-md-6"><label class="form-label small fw-bold">Teléfono / WhatsApp *</label><input type="tel" class="form-control" id="cTelefono" placeholder="Ej: 987 654 321"></div>
+            <div class="col-12"><label class="form-label small fw-bold">Tipo de entrega *</label><select class="form-select" id="cTipoEntrega"><option value="Delivery">🛵 Delivery a domicilio</option><option value="Recojo en local">🏪 Recojo en local</option></select></div>
+            <div class="col-12" id="direccionGroup"><label class="form-label small fw-bold">Dirección *</label><input type="text" class="form-control" id="cDireccion" placeholder="Ej: Av. Los Álamos 123"></div>
+          </div>
+          <h6 class="fw-bold mb-3" style="color: var(--verde-bosque);"><span class="step-badge">2</span> Resumen del pedido</h6>
+          <div id="checkoutSummary" class="p-3 rounded-3 mb-4" style="background-color: var(--crema-fondo);"></div>
+          <h6 class="fw-bold mb-3" style="color: var(--verde-bosque);"><span class="step-badge">3</span> Método de pago</h6>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6"><div class="payment-option" data-pay="yape"><div class="d-flex align-items-center gap-2"><i class="bi bi-phone-fill fs-4" style="color: #7B1FA2;"></i> <div><div class="fw-bold small">Yape</div></div></div></div></div>
+            <div class="col-md-6"><div class="payment-option" data-pay="plin"><div class="d-flex align-items-center gap-2"><i class="bi bi-phone fs-4" style="color: #00AEEF;"></i> <div><div class="fw-bold small">Plin</div></div></div></div></div>
+            <div class="col-md-6"><div class="payment-option" data-pay="bcp"><div class="d-flex align-items-center gap-2"><i class="bi bi-bank2 fs-4" style="color: #FF6B00;"></i> <div><div class="fw-bold small">Transferencia BCP</div></div></div></div></div>
+            <div class="col-md-6"><div class="payment-option" data-pay="bbva"><div class="d-flex align-items-center gap-2"><i class="bi bi-bank fs-4" style="color: #004481;"></i> <div><div class="fw-bold small">BBVA Continental</div></div></div></div></div>
+            <div class="col-md-12"><div class="payment-option" data-pay="contraentrega"><div class="d-flex align-items-center gap-2"><i class="bi bi-cash-coin fs-4" style="color: #2E7D32;"></i> <div><div class="fw-bold small">Contra entrega</div></div></div></div></div>
+          </div>
+          <div id="paymentPanel" class="p-3 rounded-3" style="background-color: var(--crema-fondo); display: none;"></div>
+          <div id="comprobanteSection" style="display: none;">
+            <h6 class="fw-bold mb-3 mt-3" style="color: var(--verde-bosque);"><span class="step-badge">4</span> Adjuntar comprobante *</h6>
+            <div class="comprobante-upload">
+              <input type="file" id="comprobanteInput" accept="image/*" hidden>
+              <label for="comprobanteInput" class="comprobante-label" id="comprobanteLabel"><i class="bi bi-cloud-arrow-up fs-1 d-block mb-2"></i><div class="fw-bold">Sube la captura de tu pago</div></label>
+              <div class="comprobante-preview" id="comprobantePreview" style="display: none;"><img id="comprobanteImg" alt="Comprobante"><div class="comprobante-actions mt-2"><button type="button" class="btn-remove-comprobante" id="btnRemoveComprobante"><i class="bi bi-x-circle"></i> Quitar</button></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-whatsapp-nav" id="btnConfirmOrder"><i class="bi bi-whatsapp me-1"></i> Confirmar pedido</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: MI PEDIDO (SEGUIMIENTO) -->
+  <div class="modal fade" id="trackOrderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header" style="background-color: var(--verde-bosque); color: white;">
+          <h5 class="modal-title fw-bold"><i class="bi bi-receipt me-2"></i>Mi Pedido</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label for="trackPhoneInput" class="form-label small fw-bold">Ingresa tu número de teléfono / WhatsApp</label>
+          <div class="input-group mb-3">
+            <input type="tel" class="form-control" id="trackPhoneInput" inputmode="numeric" placeholder="Ej: 987654321">
+            <button class="btn btn-whatsapp-nav px-4" type="button" id="btnTrackOrder">Buscar</button>
+          </div>
+          <div id="trackOrderResults"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3" id="toastContainer" style="z-index: 2000;"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/script.js"></script>
+
+  <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => console.log('Service Worker registrado con éxito', reg))
+      .catch(err => console.log('Error al registrar Service Worker', err));
+  }
+  </script>
+</body>
+</html>
