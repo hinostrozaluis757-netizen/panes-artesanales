@@ -1,4 +1,16 @@
 // ARCHIVO: js/superadmin.js
+// Frame-buster contra clickjacking (mitigación en cliente complementaria a CSP)
+if (window.top !== window.self) {
+  try {
+    window.top.location = window.self.location;
+  } catch (_) {
+    if (document.documentElement) {
+      document.documentElement.innerHTML = '';
+    }
+  }
+  throw new Error('Acceso bloqueado dentro de un marco.');
+}
+
 const PLANES_NEGOCIO = {
   basico: { label: 'Básico', badgeClass: 'bg-secondary-subtle text-dark border border-secondary-subtle' },
   pro: { label: 'Pro', badgeClass: 'bg-primary-subtle text-primary border border-primary-subtle' },
@@ -24,8 +36,10 @@ const GIROS_NEGOCIO = {
 const ACCIONES_AUDITORIA = {
   CREAR_NEGOCIO: { label: 'CREAR NEGOCIO', badgeClass: 'bg-success-subtle text-success border border-success-subtle' },
   EDITAR_NEGOCIO: { label: 'EDITAR NEGOCIO', badgeClass: 'bg-primary-subtle text-primary border border-primary-subtle' },
+  EDITAR_PLAN: { label: 'EDITAR PLAN', badgeClass: 'bg-primary text-white border border-primary' },
   ACTIVAR_NEGOCIO: { label: 'ACTIVAR NEGOCIO', badgeClass: 'bg-info-subtle text-info-emphasis border border-info-subtle' },
   SUSPENDER_NEGOCIO: { label: 'SUSPENDER NEGOCIO', badgeClass: 'bg-warning-subtle text-warning-emphasis border border-warning-subtle' },
+  SNAPSHOT_NEGOCIO: { label: 'RESPALDO SNAPSHOT', badgeClass: 'bg-dark-subtle text-dark border border-dark-subtle' },
   ELIMINAR_NEGOCIO: { label: 'ELIMINAR NEGOCIO', badgeClass: 'bg-danger-subtle text-danger border border-danger-subtle' }
 };
 
@@ -40,7 +54,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
 }[c]));
 
 function mostrarErrorConfiguracion(mensaje) {
-  ['#loginView', '#accessDeniedView', '#dashboardView'].forEach(sel => {
+  ['#loginView', '#accessDeniedView', '#authErrorView', '#dashboardView'].forEach(sel => {
     const el = $(sel);
     if (el) el.classList.add('d-none');
   });
@@ -67,14 +81,20 @@ let textoBusqueda = '';
 let slugEditadoManualmente = false;
 let creacionEnCurso = false;
 let edicionEnCurso = false;
+let suspensionEnCurso = false;
+let snapshotEnCurso = false;
 let eliminacionEnCurso = false;
+let deleteSnapshotState = null;
 let ultimasCredenciales = null;
 let currentSuperadminUser = null;
+let lastEvaluatedUserId = null;
+let evaluatingUserIdInFlight = null;
 let evaluandoSesionSeq = 0;
 
-const esUrlHttpsValida = (u) => {
+const esUrlHttpValida = (u) => {
   const s = String(u || '').trim();
   if (!s) return true;
+  if (s.length > 500) return false;
   try {
     const parsed = new URL(s);
     return parsed.protocol === 'https:';
@@ -106,6 +126,17 @@ function fmtFechaCorta(dateStr) {
   const d = parseFechaIsoLocal(dateStr);
   if (!d) return '—';
   return d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function obtenerGobiernoNegocio(negocio) {
+  if (!negocio) return { plan: 'basico', fecha_vencimiento_plan: null, motivo_suspension: null };
+  const raw = negocio.negocios_gobierno;
+  const gob = Array.isArray(raw) ? (raw[0] || {}) : (raw && typeof raw === 'object' ? raw : {});
+  return {
+    plan: gob.plan || 'basico',
+    fecha_vencimiento_plan: gob.fecha_vencimiento_plan || null,
+    motivo_suspension: gob.motivo_suspension || null
+  };
 }
 
 function obtenerBadgeVencimientoPlan(fechaStr) {
@@ -167,10 +198,11 @@ function construirUrlRelativa(rutaRelativa) {
   return rutaRelativa;
 }
 
+let toastSeq = 0;
 function toast(msg, type = 'success') {
   const container = $('#toastContainer');
   if (!container) return;
-  const id = 't-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+  const id = 't-' + Date.now() + '-' + (++toastSeq);
   const bg = {
     success: 'text-bg-success',
     danger: 'text-bg-danger',
@@ -183,7 +215,7 @@ function toast(msg, type = 'success') {
   );
   const toastEl = document.getElementById(id);
   if (toastEl && typeof bootstrap !== 'undefined' && bootstrap.Toast) {
-    const t = new bootstrap.Toast(toastEl, { delay: 3200 });
+    const t = new bootstrap.Toast(toastEl, { delay: 3500 });
     t.show();
     toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
   }
@@ -199,7 +231,10 @@ async function fetchConTimeout(url, options = {}, timeoutMs = 15000) {
     });
   } catch (err) {
     if (err && err.name === 'AbortError') {
-      throw new Error('La conexión tardó demasiado (timeout de 15 s). Verifica tu red e intenta nuevamente.');
+      if (currentSuperadminUser && !$('#dashboardView')?.classList.contains('d-none')) {
+        cargarNegocios().catch(() => {});
+      }
+      throw new Error('Tiempo de espera agotado: la operación pudo completarse en el servidor. Se actualizó el listado.');
     }
     throw new Error('Error de red al comunicarse con el servidor.');
   } finally {
@@ -207,17 +242,79 @@ async function fetchConTimeout(url, options = {}, timeoutMs = 15000) {
   }
 }
 
-function descargarRespaldoJson(slug, snapshot) {
-  if (!snapshot) return;
+function arrayBufferToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function cifrarContenidoConFrase(plainText, sha256Plain, passphrase) {
+  if (!window.crypto || !window.crypto.subtle || typeof window.crypto.getRandomValues !== 'function') {
+    throw new Error('Tu navegador no soporta cifrado WebCrypto AES-GCM.');
+  }
+  const enc = new TextEncoder();
+  const salt = window.crypto.getRandomValues(new Uint8Array(16));
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const iterations = 250000;
+
+  const baseKey = await window.crypto.subtle.importKey(
+    'raw',
+    enc.encode(passphrase),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+
+  const aesKey = await window.crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations,
+      hash: 'SHA-256'
+    },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  );
+
+  const cipherBuf = await window.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    aesKey,
+    enc.encode(plainText)
+  );
+
+  return JSON.stringify({
+    formato: 'don-roberto-backup-aes-gcm-v1',
+    algoritmo: 'AES-256-GCM',
+    kdf: 'PBKDF2-SHA256',
+    iteraciones: iterations,
+    salt_b64: arrayBufferToBase64(salt),
+    iv_b64: arrayBufferToBase64(iv),
+    ciphertext_b64: arrayBufferToBase64(new Uint8Array(cipherBuf)),
+    sha256_plaintext: sha256Plain
+  }, null, 2);
+}
+
+async function descargarRespaldoSnapshot(slug, snapshot, sha256, passphrase = '') {
   const ahora = new Date();
   const pad = (v) => String(v).padStart(2, '0');
   const timestamp = `${ahora.getFullYear()}${pad(ahora.getMonth() + 1)}${pad(ahora.getDate())}_${pad(ahora.getHours())}${pad(ahora.getMinutes())}`;
   const slugLimpio = normalizarSlug(slug) || 'negocio';
-  const nombreArchivo = `respaldo_${slugLimpio}_${timestamp}.json`;
+  const jsonPlano = JSON.stringify(snapshot, null, 2);
 
-  const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
-    type: 'application/json;charset=utf-8'
-  });
+  let contenidoFinal = jsonPlano;
+  let nombreArchivo = `respaldo_${slugLimpio}_${timestamp}.json`;
+
+  if (passphrase) {
+    contenidoFinal = await cifrarContenidoConFrase(jsonPlano, sha256, passphrase);
+    nombreArchivo = `respaldo_${slugLimpio}_${timestamp}.enc.json`;
+  }
+
+  const blob = new Blob([contenidoFinal], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -226,6 +323,7 @@ function descargarRespaldoJson(slug, snapshot) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return nombreArchivo;
 }
 
 async function copiarAlPortapapeles(texto, mensajeExito = 'Copiado al portapapeles ✅') {
@@ -256,32 +354,53 @@ async function copiarAlPortapapeles(texto, mensajeExito = 'Copiado al portapapel
   return false;
 }
 
-function generarPasswordSegura(longitud = 12) {
+function randomIntCrypto(maxExclusive) {
+  if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') {
+    throw new Error('Este navegador no soporta crypto.getRandomValues.');
+  }
+  const limit = Math.floor(0x100000000 / maxExclusive) * maxExclusive;
+  const buf = new Uint32Array(1);
+  let val;
+  do {
+    window.crypto.getRandomValues(buf);
+    val = buf[0];
+  } while (val >= limit);
+  return val % maxExclusive;
+}
+
+function generarPasswordSegura(longitud = 14) {
+  const len = Math.max(12, Math.min(72, longitud));
   const mayus = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const minus = 'abcdefghijkmnpqrstuvwxyz';
   const nums = '23456789';
   const simbolos = '!@#$%&*';
   const todos = mayus + minus + nums + simbolos;
 
-  const pick = (pool) => {
-    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-      const arr = new Uint32Array(1);
-      crypto.getRandomValues(arr);
-      return pool[arr[0] % pool.length];
-    }
-    return pool[Math.floor(Math.random() * pool.length)];
-  };
-
+  const pick = (pool) => pool[randomIntCrypto(pool.length)];
   const chars = [pick(mayus), pick(minus), pick(nums), pick(simbolos)];
-  while (chars.length < longitud) {
+  while (chars.length < len) {
     chars.push(pick(todos));
   }
 
   for (let i = chars.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = randomIntCrypto(i + 1);
     [chars[i], chars[j]] = [chars[j], chars[i]];
   }
   return chars.join('');
+}
+
+function limpiarCredencialesTemporales() {
+  ultimasCredenciales = null;
+  if ($('#credNegocioNombre')) $('#credNegocioNombre').textContent = '';
+  if ($('#credAdminUrl')) $('#credAdminUrl').textContent = '';
+  if ($('#credTiendaUrl')) $('#credTiendaUrl').textContent = '';
+  if ($('#credEmail')) $('#credEmail').textContent = '';
+  if ($('#credPassword')) $('#credPassword').textContent = '';
+  const btnWa = $('#btnEnviarWhatsAppDirecto');
+  if (btnWa) {
+    btnWa.removeAttribute('href');
+    btnWa.classList.add('d-none');
+  }
 }
 
 function cerrarModalesAbiertos() {
@@ -290,6 +409,7 @@ function cerrarModalesAbiertos() {
     '#modalCrearNegocio',
     '#modalCredencialesCreadas',
     '#modalEditarNegocio',
+    '#modalSuspenderNegocio',
     '#modalAuditoria',
     '#modalEliminarNegocio'
   ].forEach(sel => {
@@ -303,30 +423,8 @@ function cerrarModalesAbiertos() {
 }
 
 // =============================================================================
-// AUDITORÍA INMUTABLE (ISO 9001 / ISO 19011)
+// HISTORIAL DE AUDITORÍA (SOLO LECTURA DESDE EL CLIENTE)
 // =============================================================================
-async function registrarAuditoria({ accion, entidad = 'negocios', entidad_id = null, detalles = {} }) {
-  if (!supabaseClient || !currentSuperadminUser?.id) return;
-  try {
-    const { error } = await supabaseClient
-      .from('logs_auditoria')
-      .insert({
-        actor_id: currentSuperadminUser.id,
-        actor_email: currentSuperadminUser.email || null,
-        accion,
-        entidad,
-        entidad_id: entidad_id ? String(entidad_id) : null,
-        detalles: detalles && typeof detalles === 'object' ? detalles : {}
-      });
-
-    if (error) {
-      console.warn('No se pudo registrar evento en logs_auditoria:', error);
-    }
-  } catch (err) {
-    console.warn('Excepción registrando auditoría:', err);
-  }
-}
-
 async function cargarLogsAuditoria() {
   if (!supabaseClient) return;
   const tbody = $('#auditoriaTableBody');
@@ -401,18 +499,32 @@ function renderTablaAuditoria(logs) {
 function mostrarVista(vista) {
   if ($('#loginView')) $('#loginView').classList.toggle('d-none', vista !== 'login');
   if ($('#accessDeniedView')) $('#accessDeniedView').classList.toggle('d-none', vista !== 'denied');
+  if ($('#authErrorView')) $('#authErrorView').classList.toggle('d-none', vista !== 'auth_error');
   if ($('#dashboardView')) $('#dashboardView').classList.toggle('d-none', vista !== 'dashboard');
 }
 
 function resetearEstadoSuperadmin() {
   allNegocios = [];
-  ultimasCredenciales = null;
+  deleteSnapshotState = null;
   currentSuperadminUser = null;
+  limpiarCredencialesTemporales();
   cerrarModalesAbiertos();
   if ($('#userEmail')) $('#userEmail').textContent = '';
   if ($('#tenantsTableBody')) {
-    $('#tenantsTableBody').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Sin sesión activa.</td></tr>';
+    $('#tenantsTableBody').innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Sin sesión activa.</td></tr>';
   }
+}
+
+function esErrorTablaSuperadminsInexistente(err) {
+  if (!err) return false;
+  const code = String(err.code || '').toUpperCase();
+  const msg = String(err.message || '');
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    /relation .*superadmins.* does not exist/i.test(msg) ||
+    /could not find the table.*superadmins/i.test(msg)
+  );
 }
 
 async function evaluarSesion(session) {
@@ -420,49 +532,99 @@ async function evaluarSesion(session) {
   if (!supabaseClient) return;
 
   if (!session || !session.user?.id) {
+    lastEvaluatedUserId = null;
+    evaluatingUserIdInFlight = null;
     resetearEstadoSuperadmin();
     mostrarVista('login');
     return;
   }
 
-  const { data: superadminRow, error: saError } = await supabaseClient
-    .from('superadmins')
-    .select('user_id, rol')
-    .eq('user_id', session.user.id)
-    .eq('activo', true)
-    .maybeSingle();
+  evaluatingUserIdInFlight = session.user.id;
+  try {
+    const { data: superadminRow, error: saError } = await supabaseClient
+      .from('superadmins')
+      .select('user_id, rol')
+      .eq('user_id', session.user.id)
+      .eq('activo', true)
+      .maybeSingle();
 
-  if (seq !== evaluandoSesionSeq) return;
+    if (seq !== evaluandoSesionSeq) return;
 
-  if (saError || !superadminRow) {
-    resetearEstadoSuperadmin();
-    if ($('#deniedUserEmail')) {
-      $('#deniedUserEmail').textContent = session.user.email || truncarUuid(session.user.id);
+    if (saError) {
+      console.error('Error consultando public.superadmins:', saError);
+      lastEvaluatedUserId = null;
+      resetearEstadoSuperadmin();
+      const bdSinActualizar = esErrorTablaSuperadminsInexistente(saError);
+      if ($('#authErrorTitle')) {
+        $('#authErrorTitle').textContent = bdSinActualizar
+          ? 'Base de datos sin actualizar'
+          : 'Error de conexión';
+      }
+      if ($('#authErrorMsg')) {
+        $('#authErrorMsg').textContent = bdSinActualizar
+          ? 'La tabla public.superadmins aún no existe. Ejecuta sql/10_gobernanza_y_blindaje.sql en Supabase antes de usar este panel.'
+          : 'No se pudo verificar la autorización con el servidor. Verifica tu conexión a internet e intenta nuevamente.';
+      }
+      mostrarVista('auth_error');
+      return;
     }
-    mostrarVista('denied');
-    return;
-  }
 
-  currentSuperadminUser = session.user;
-  if ($('#userEmail')) $('#userEmail').textContent = session.user.email || truncarUuid(session.user.id);
-  mostrarVista('dashboard');
-  await cargarNegocios();
+    if (!superadminRow) {
+      lastEvaluatedUserId = null;
+      resetearEstadoSuperadmin();
+      if ($('#deniedUserEmail')) {
+        $('#deniedUserEmail').textContent = session.user.email || truncarUuid(session.user.id);
+      }
+      mostrarVista('denied');
+      return;
+    }
+
+    lastEvaluatedUserId = session.user.id;
+    currentSuperadminUser = session.user;
+    if ($('#userEmail')) $('#userEmail').textContent = session.user.email || truncarUuid(session.user.id);
+    mostrarVista('dashboard');
+    await cargarNegocios();
+  } catch (err) {
+    if (seq !== evaluandoSesionSeq) return;
+    console.error('Excepción en evaluarSesion:', err);
+    lastEvaluatedUserId = null;
+    resetearEstadoSuperadmin();
+    if ($('#authErrorTitle')) $('#authErrorTitle').textContent = 'Error de conexión';
+    if ($('#authErrorMsg')) {
+      $('#authErrorMsg').textContent = 'No se pudo conectar con Supabase. Revisa tu red e intenta nuevamente.';
+    }
+    mostrarVista('auth_error');
+  } finally {
+    if (evaluatingUserIdInFlight === session.user.id) {
+      evaluatingUserIdInFlight = null;
+    }
+  }
 }
 
 async function checkSession() {
   if (!supabaseClient) return;
-  const { data: { session }, error } = await supabaseClient.auth.getSession();
-  if (error || !session) {
-    resetearEstadoSuperadmin();
-    mostrarVista('login');
-    return;
+  try {
+    const { data: { session }, error } = await supabaseClient.auth.getSession();
+    if (error || !session) {
+      lastEvaluatedUserId = null;
+      resetearEstadoSuperadmin();
+      mostrarVista('login');
+      return;
+    }
+    await evaluarSesion(session);
+  } catch (err) {
+    console.error('Error en checkSession:', err);
+    if ($('#authErrorTitle')) $('#authErrorTitle').textContent = 'Error de conexión';
+    if ($('#authErrorMsg')) $('#authErrorMsg').textContent = 'No se pudo comprobar la sesión actual.';
+    mostrarVista('auth_error');
   }
-  await evaluarSesion(session);
 }
 
 async function cerrarSesion() {
   if (!supabaseClient) return;
   evaluandoSesionSeq++;
+  lastEvaluatedUserId = null;
+  evaluatingUserIdInFlight = null;
   resetearEstadoSuperadmin();
   try {
     await supabaseClient.auth.signOut();
@@ -477,19 +639,29 @@ if (supabaseClient && supabaseClient.auth && typeof supabaseClient.auth.onAuthSt
   supabaseClient.auth.onAuthStateChange((event, session) => {
     if (event === 'SIGNED_OUT' || !session || !session.user) {
       evaluandoSesionSeq++;
+      lastEvaluatedUserId = null;
+      evaluatingUserIdInFlight = null;
       resetearEstadoSuperadmin();
       if ($('#loginPassword')) $('#loginPassword').value = '';
       mostrarVista('login');
       return;
     }
 
-    if (event === 'TOKEN_REFRESHED' && currentSuperadminUser && String(session.user.id) === String(currentSuperadminUser.id)) {
-      currentSuperadminUser = session.user;
+    if (event === 'TOKEN_REFRESHED') {
+      if (lastEvaluatedUserId && String(session.user.id) === String(lastEvaluatedUserId)) {
+        currentSuperadminUser = session.user;
+      }
       return;
     }
 
-    if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && (!currentSuperadminUser || String(session.user.id) !== String(currentSuperadminUser.id))) {
-      evaluarSesion(session);
+    if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+      const uid = String(session.user.id);
+      if (uid === String(lastEvaluatedUserId || '') || uid === String(evaluatingUserIdInFlight || '')) {
+        return;
+      }
+      setTimeout(() => {
+        evaluarSesion(session);
+      }, 0);
     }
   });
 }
@@ -534,6 +706,8 @@ if ($('#loginForm')) {
 
 if ($('#logoutBtn')) $('#logoutBtn').addEventListener('click', cerrarSesion);
 if ($('#deniedLogoutBtn')) $('#deniedLogoutBtn').addEventListener('click', cerrarSesion);
+if ($('#authErrorLogoutBtn')) $('#authErrorLogoutBtn').addEventListener('click', cerrarSesion);
+if ($('#btnReintentarSesion')) $('#btnReintentarSesion').addEventListener('click', checkSession);
 
 // =============================================================================
 // KPIs Y TABLA DE INQUILINOS
@@ -542,18 +716,18 @@ async function cargarNegocios() {
   if (!supabaseClient) return;
   const tbody = $('#tenantsTableBody');
   if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Cargando negocios...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Cargando negocios...</td></tr>';
   }
 
   const { data, error } = await supabaseClient
     .from('negocios')
-    .select('id, nombre, slug, whatsapp, logo_url, tipo_negocio, hero_imagen_url, hero_titulo_custom, color_primario, color_secundario, plan, fecha_vencimiento_plan, motivo_suspension, activo, owner_id, created_at')
+    .select('id, nombre, slug, whatsapp, logo_url, tipo_negocio, hero_imagen_url, hero_titulo_custom, color_primario, color_secundario, activo, owner_id, created_at, negocios_gobierno(plan, fecha_vencimiento_plan, motivo_suspension)')
     .order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error cargando negocios:', error);
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">Error al cargar negocios: ${esc(error.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-4">Error al cargar negocios: ${esc(error.message)}</td></tr>`;
     }
     return;
   }
@@ -581,8 +755,9 @@ function obtenerNegociosFiltrados() {
     if (filtroEstado === 'suspendidos' && activo) return false;
     if (!q) return true;
     const giroInfo = GIROS_NEGOCIO[n.tipo_negocio] || GIROS_NEGOCIO.general;
-    const planInfo = PLANES_NEGOCIO[n.plan] || PLANES_NEGOCIO.basico;
-    const hay = `${n.nombre || ''} ${n.slug || ''} ${n.whatsapp || ''} ${n.owner_id || ''} ${n.tipo_negocio || ''} ${giroInfo.label} ${n.plan || ''} ${planInfo.label}`.toLowerCase();
+    const gob = obtenerGobiernoNegocio(n);
+    const planInfo = PLANES_NEGOCIO[gob.plan] || PLANES_NEGOCIO.basico;
+    const hay = `${n.nombre || ''} ${n.slug || ''} ${n.whatsapp || ''} ${n.owner_id || ''} ${n.tipo_negocio || ''} ${giroInfo.label} ${gob.plan || ''} ${planInfo.label}`.toLowerCase();
     return hay.includes(q);
   });
 }
@@ -593,7 +768,7 @@ function renderTablaNegocios() {
 
   const lista = obtenerNegociosFiltrados();
   if (!lista.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No se encontraron negocios para el filtro actual.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No se encontraron negocios para el filtro actual.</td></tr>';
     return;
   }
 
@@ -607,10 +782,11 @@ function renderTablaNegocios() {
     const giro = GIROS_NEGOCIO[giroKey];
     const badgeGiro = `<span class="badge ${giro.badgeClass} rounded-pill">${esc(giro.label)}</span>`;
 
-    const planKey = Object.prototype.hasOwnProperty.call(PLANES_NEGOCIO, n.plan) ? n.plan : 'basico';
+    const gob = obtenerGobiernoNegocio(n);
+    const planKey = Object.prototype.hasOwnProperty.call(PLANES_NEGOCIO, gob.plan) ? gob.plan : 'basico';
     const planCfg = PLANES_NEGOCIO[planKey];
     const badgePlan = `<span class="badge ${planCfg.badgeClass} rounded-pill">${esc(planCfg.label)}</span>`;
-    const badgeVencimiento = obtenerBadgeVencimientoPlan(n.fecha_vencimiento_plan);
+    const badgeVencimiento = obtenerBadgeVencimientoPlan(gob.fecha_vencimiento_plan);
 
     const tieneBrandingCustom = Boolean(
       String(n.logo_url || '').trim() ||
@@ -623,12 +799,12 @@ function renderTablaNegocios() {
       ? '<span class="badge bg-dark-subtle text-dark border border-dark-subtle rounded-pill" title="Identidad visual personalizada"><i class="bi bi-palette-fill me-1"></i>Custom</span>'
       : '';
 
-    const motivoHtml = !activo && n.motivo_suspension
-      ? `<div class="small text-danger mt-1"><i class="bi bi-info-circle me-1"></i>${esc(n.motivo_suspension)}</div>`
+    const motivoHtml = !activo && gob.motivo_suspension
+      ? `<div class="small text-danger mt-1"><i class="bi bi-info-circle me-1"></i>${esc(gob.motivo_suspension)}</div>`
       : '';
 
     const waHtml = n.whatsapp
-      ? `<a href="https://wa.me/${encodeURIComponent(String(n.whatsapp).replace(/\D/g, ''))}" target="_blank" rel="noopener" class="text-decoration-none text-success fw-semibold"><i class="bi bi-whatsapp me-1"></i>${esc(n.whatsapp)}</a>`
+      ? `<a href="https://wa.me/${encodeURIComponent(String(n.whatsapp).replace(/\D/g, ''))}" target="_blank" rel="noopener noreferrer" class="text-decoration-none text-success fw-semibold"><i class="bi bi-whatsapp me-1"></i>${esc(n.whatsapp)}</a>`
       : '<span class="text-muted small">—</span>';
 
     return `
@@ -639,16 +815,12 @@ function renderTablaNegocios() {
           ${motivoHtml}
         </td>
         <td>
-          <a href="${tiendaUrlRel}" target="_blank" rel="noopener" class="text-decoration-none fw-semibold" style="color: #1B4D3E;">
+          <a href="${tiendaUrlRel}" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-semibold" style="color: #1B4D3E;">
             <code>?tienda=${esc(n.slug)}</code> <i class="bi bi-box-arrow-up-right small ms-1"></i>
           </a>
         </td>
-        <td>
-          <div class="d-flex flex-column align-items-start gap-1">
-            ${badgePlan}
-            ${badgeVencimiento}
-          </div>
-        </td>
+        <td>${badgePlan}</td>
+        <td>${badgeVencimiento}</td>
         <td>${waHtml}</td>
         <td><small class="text-muted">${esc(fmtDate(n.created_at))}</small></td>
         <td>
@@ -673,7 +845,7 @@ function renderTablaNegocios() {
             <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-2 btn-copy-store-url" data-slug="${esc(n.slug)}" title="Copiar enlace de tienda">
               <i class="bi bi-link-45deg"></i> Link
             </button>
-            <a href="${tiendaUrlRel}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-dark rounded-pill px-2" title="Abrir tienda">
+            <a href="${tiendaUrlRel}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-dark rounded-pill px-2" title="Abrir tienda">
               <i class="bi bi-shop"></i>
             </a>
             <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-2 btn-editar-negocio" data-id="${esc(n.id)}" title="Editar identidad, plan y datos">
@@ -700,7 +872,14 @@ function renderTablaNegocios() {
   });
 
   $$('#tenantsTableBody .switch-estado-negocio').forEach(sw => {
-    sw.addEventListener('change', () => alternarEstadoNegocio(sw.dataset.id, sw.checked, sw));
+    sw.addEventListener('change', () => {
+      if (!sw.checked) {
+        sw.checked = true;
+        abrirModalSuspenderNegocio(sw.dataset.id);
+      } else {
+        activarNegocio(sw.dataset.id, sw);
+      }
+    });
   });
 
   $$('#tenantsTableBody .btn-editar-negocio').forEach(btn => {
@@ -712,52 +891,116 @@ function renderTablaNegocios() {
   });
 }
 
-async function alternarEstadoNegocio(negocioId, nuevoEstado, switchEl) {
+async function activarNegocio(negocioId, switchEl) {
   if (!supabaseClient) return;
-  const negocioPrevio = allNegocios.find(n => String(n.id) === String(negocioId));
   if (switchEl) switchEl.disabled = true;
 
   try {
     const { data, error } = await supabaseClient
       .from('negocios')
-      .update({ activo: nuevoEstado })
+      .update({ activo: true })
       .eq('id', negocioId)
       .select('id, activo')
       .single();
 
     if (error || !data) {
-      throw error || new Error('No se pudo actualizar el estado del negocio.');
+      throw error || new Error('No se pudo activar el negocio.');
     }
 
-    if (negocioPrevio) {
-      negocioPrevio.activo = Boolean(data.activo);
-    }
-
-    await registrarAuditoria({
-      accion: nuevoEstado ? 'ACTIVAR_NEGOCIO' : 'SUSPENDER_NEGOCIO',
-      entidad: 'negocios',
-      entidad_id: negocioId,
-      detalles: {
-        nombre: negocioPrevio?.nombre || null,
-        slug: negocioPrevio?.slug || null,
-        activo_nuevo: Boolean(data.activo),
-        motivo_suspension: negocioPrevio?.motivo_suspension || null
-      }
-    });
+    const neg = allNegocios.find(n => String(n.id) === String(negocioId));
+    if (neg) neg.activo = true;
 
     actualizarKPIs();
     renderTablaNegocios();
-    toast(
-      nuevoEstado ? 'Negocio activado correctamente ✅' : 'Negocio suspendido correctamente ⚠️',
-      nuevoEstado ? 'success' : 'warning'
-    );
+    toast('Negocio activado correctamente ✅', 'success');
   } catch (err) {
-    console.error('Error actualizando estado:', err);
-    if (switchEl) switchEl.checked = !nuevoEstado;
-    toast('Error al cambiar estado: ' + esc(err?.message || 'Desconocido'), 'danger');
+    console.error('Error activando negocio:', err);
+    if (switchEl) switchEl.checked = false;
+    toast('Error al activar negocio: ' + esc(err?.message || 'Desconocido'), 'danger');
   } finally {
     if (switchEl) switchEl.disabled = false;
   }
+}
+
+function abrirModalSuspenderNegocio(negocioId) {
+  const n = allNegocios.find(item => String(item.id) === String(negocioId));
+  if (!n) return;
+
+  const gob = obtenerGobiernoNegocio(n);
+  if ($('#suspenderNegId')) $('#suspenderNegId').value = n.id;
+  if ($('#suspenderNegocioNombre')) $('#suspenderNegocioNombre').textContent = n.nombre || '';
+  if ($('#suspenderMotivoInput')) $('#suspenderMotivoInput').value = gob.motivo_suspension || '';
+  if ($('#suspenderNegocioError')) {
+    $('#suspenderNegocioError').textContent = '';
+    $('#suspenderNegocioError').classList.add('d-none');
+  }
+
+  const modalEl = $('#modalSuspenderNegocio');
+  if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+}
+
+if ($('#formSuspenderNegocio')) {
+  $('#formSuspenderNegocio').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (suspensionEnCurso || !supabaseClient) return;
+
+    const errEl = $('#suspenderNegocioError');
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.classList.add('d-none');
+    }
+
+    const negId = String($('#suspenderNegId')?.value || '').trim();
+    const motivo = String($('#suspenderMotivoInput')?.value || '').trim() || null;
+    if (!negId) return;
+
+    suspensionEnCurso = true;
+    const btn = $('#btnConfirmarSuspender');
+    const spinner = $('#spinnerSuspenderNegocio');
+    const txtBtn = $('#txtBtnSuspenderNegocio');
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.classList.remove('d-none');
+    if (txtBtn) txtBtn.textContent = 'Suspendiendo...';
+
+    try {
+      const { error: errNeg } = await supabaseClient
+        .from('negocios')
+        .update({ activo: false })
+        .eq('id', negId)
+        .select('id')
+        .single();
+
+      if (errNeg) throw errNeg;
+
+      const { error: errGob } = await supabaseClient
+        .from('negocios_gobierno')
+        .upsert({ negocio_id: negId, motivo_suspension: motivo }, { onConflict: 'negocio_id' });
+
+      if (errGob) throw errGob;
+
+      const modalEl = $('#modalSuspenderNegocio');
+      if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const inst = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+        inst.hide();
+      }
+
+      toast('Negocio suspendido correctamente ⚠️', 'warning');
+      await cargarNegocios();
+    } catch (err) {
+      console.error('Error suspendiendo negocio:', err);
+      if (errEl) {
+        errEl.textContent = err?.message || 'No se pudo suspender el negocio.';
+        errEl.classList.remove('d-none');
+      }
+    } finally {
+      suspensionEnCurso = false;
+      if (btn) btn.disabled = false;
+      if (spinner) spinner.classList.add('d-none');
+      if (txtBtn) txtBtn.innerHTML = '<i class="bi bi-pause-fill me-1"></i> Confirmar Suspensión';
+    }
+  });
 }
 
 if ($('#btnRecargarNegocios')) {
@@ -862,7 +1105,7 @@ if ($('#negSlug')) {
 if ($('#btnGenerarPassword')) {
   $('#btnGenerarPassword').addEventListener('click', () => {
     if ($('#negPassword')) {
-      $('#negPassword').value = generarPasswordSegura(12);
+      $('#negPassword').value = generarPasswordSegura(14);
       $('#negPassword').type = 'text';
     }
     if ($('#iconTogglePassword')) {
@@ -908,7 +1151,7 @@ function mostrarResumenCredenciales({ nombre, slug, whatsapp, email, password })
       btnWa.href = `https://wa.me/${ultimasCredenciales.whatsapp}?text=${encodeURIComponent(construirTextoWhatsAppCredenciales(ultimasCredenciales))}`;
       btnWa.classList.remove('d-none');
     } else {
-      btnWa.href = '#';
+      btnWa.removeAttribute('href');
       btnWa.classList.add('d-none');
     }
   }
@@ -917,6 +1160,10 @@ function mostrarResumenCredenciales({ nombre, slug, whatsapp, email, password })
   if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
     bootstrap.Modal.getOrCreateInstance(modalEl).show();
   }
+}
+
+if ($('#modalCredencialesCreadas')) {
+  $('#modalCredencialesCreadas').addEventListener('hidden.bs.modal', limpiarCredencialesTemporales);
 }
 
 function construirTextoWhatsAppCredenciales(creds) {
@@ -963,9 +1210,19 @@ if ($('#formCrearNegocio')) {
     const email_dueno = ($('#negEmailDueno')?.value || '').trim().toLowerCase();
     const password = $('#negPassword')?.value || '';
 
-    if (!nombre_negocio || !slug || !email_dueno || password.length < 6) {
+    if (
+      !nombre_negocio ||
+      nombre_negocio.length > 100 ||
+      !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug) ||
+      slug.length < 3 ||
+      slug.length > 40 ||
+      (whatsapp && !/^\d{9,15}$/.test(whatsapp)) ||
+      !email_dueno ||
+      password.length < 12 ||
+      password.length > 72
+    ) {
       if (errEl) {
-        errEl.textContent = 'Completa nombre, slug válido, correo y contraseña (mín. 6 caracteres).';
+        errEl.textContent = 'Verifica nombre (máx. 100), slug (3-40 caracteres), WhatsApp (9-15 dígitos opcional), correo y contraseña (12 a 72 caracteres).';
         errEl.classList.remove('d-none');
       }
       return;
@@ -1050,7 +1307,7 @@ function actualizarPreviewImagenEditor(inputSel, wrapSel, imgSel) {
   const img = $(imgSel);
   if (!wrap || !img) return;
 
-  if (raw && esUrlHttpsValida(raw)) {
+  if (raw && esUrlHttpValida(raw)) {
     img.src = raw;
     img.onerror = () => wrap.classList.add('d-none');
     wrap.classList.remove('d-none');
@@ -1080,6 +1337,8 @@ function abrirModalEditarNegocio(negocioId) {
   const n = allNegocios.find(item => String(item.id) === String(negocioId));
   if (!n) return;
 
+  const gob = obtenerGobiernoNegocio(n);
+
   if ($('#editarNegocioError')) {
     $('#editarNegocioError').textContent = '';
     $('#editarNegocioError').classList.add('d-none');
@@ -1095,15 +1354,15 @@ function abrirModalEditarNegocio(negocioId) {
       : 'general';
   }
   if ($('#editNegPlan')) {
-    $('#editNegPlan').value = Object.prototype.hasOwnProperty.call(PLANES_NEGOCIO, n.plan)
-      ? n.plan
+    $('#editNegPlan').value = Object.prototype.hasOwnProperty.call(PLANES_NEGOCIO, gob.plan)
+      ? gob.plan
       : 'basico';
   }
   if ($('#editNegFechaVencimiento')) {
-    $('#editNegFechaVencimiento').value = n.fecha_vencimiento_plan ? String(n.fecha_vencimiento_plan).slice(0, 10) : '';
+    $('#editNegFechaVencimiento').value = gob.fecha_vencimiento_plan ? String(gob.fecha_vencimiento_plan).slice(0, 10) : '';
   }
   if ($('#editNegMotivoSuspension')) {
-    $('#editNegMotivoSuspension').value = n.motivo_suspension || '';
+    $('#editNegMotivoSuspension').value = gob.motivo_suspension || '';
   }
   if ($('#editLogoUrl')) $('#editLogoUrl').value = n.logo_url || '';
   if ($('#editHeroImagenUrl')) $('#editHeroImagenUrl').value = n.hero_imagen_url || '';
@@ -1168,7 +1427,6 @@ if ($('#formEditarNegocio')) {
     }
 
     const negId = String($('#editNegId')?.value || '').trim();
-    const negocioPrevio = allNegocios.find(item => String(item.id) === negId);
     const nombre = String($('#editNegNombre')?.value || '').trim();
     const whatsappClean = String($('#editNegWhatsapp')?.value || '').replace(/\D/g, '') || null;
     const rawTipo = String($('#editNegTipo')?.value || 'general').trim().toLowerCase();
@@ -1181,23 +1439,30 @@ if ($('#formEditarNegocio')) {
     const hero_imagen_url = String($('#editHeroImagenUrl')?.value || '').trim() || null;
     const hero_titulo_custom = String($('#editHeroTituloCustom')?.value || '').trim() || null;
 
-    if (!negId || !nombre) {
+    if (!negId || !nombre || nombre.length > 100) {
       if (errEl) {
-        errEl.textContent = 'El nombre del negocio es obligatorio.';
+        errEl.textContent = 'El nombre del negocio es obligatorio (máx. 100 caracteres).';
         errEl.classList.remove('d-none');
       }
       return;
     }
 
-    if ((logo_url && !esUrlHttpsValida(logo_url)) || (hero_imagen_url && !esUrlHttpsValida(hero_imagen_url))) {
+    if (whatsappClean && !/^\d{9,15}$/.test(whatsappClean)) {
       if (errEl) {
-        errEl.textContent = 'Las URLs de logo y portada deben comenzar con https://.';
+        errEl.textContent = 'El WhatsApp debe tener entre 9 y 15 dígitos o dejarse vacío.';
         errEl.classList.remove('d-none');
       }
       return;
     }
 
-    // Regla crítica: si el checkbox está desmarcado, enviar siempre null para no dañar las plantillas
+    if ((logo_url && !esUrlHttpValida(logo_url)) || (hero_imagen_url && !esUrlHttpValida(hero_imagen_url))) {
+      if (errEl) {
+        errEl.textContent = 'Las URLs de logo y portada deben comenzar con https:// (máx. 500 caracteres).';
+        errEl.classList.remove('d-none');
+      }
+      return;
+    }
+
     const usarColoresCustom = Boolean($('#editActivarColores')?.checked);
     const color_primario = usarColoresCustom ? String($('#editColorPrimario')?.value || '').trim() || null : null;
     const color_secundario = usarColoresCustom ? String($('#editColorSecundario')?.value || '').trim() || null : null;
@@ -1211,13 +1476,10 @@ if ($('#formEditarNegocio')) {
     if (txtBtn) txtBtn.textContent = 'Guardando...';
 
     try {
-      const payload = {
+      const payloadNegocio = {
         nombre,
         whatsapp: whatsappClean,
         tipo_negocio,
-        plan,
-        fecha_vencimiento_plan,
-        motivo_suspension,
         logo_url,
         hero_imagen_url,
         hero_titulo_custom,
@@ -1227,7 +1489,7 @@ if ($('#formEditarNegocio')) {
 
       const { data, error } = await supabaseClient
         .from('negocios')
-        .update(payload)
+        .update(payloadNegocio)
         .eq('id', negId)
         .select('id')
         .single();
@@ -1236,20 +1498,18 @@ if ($('#formEditarNegocio')) {
         throw error || new Error('No se pudo actualizar la identidad del negocio.');
       }
 
-      await registrarAuditoria({
-        accion: 'EDITAR_NEGOCIO',
-        entidad: 'negocios',
-        entidad_id: negId,
-        detalles: {
-          nombre,
-          slug: negocioPrevio?.slug || null,
-          tipo_negocio,
+      const { error: gobError } = await supabaseClient
+        .from('negocios_gobierno')
+        .upsert({
+          negocio_id: negId,
           plan,
           fecha_vencimiento_plan,
-          motivo_suspension,
-          branding_custom: usarColoresCustom || Boolean(logo_url || hero_imagen_url || hero_titulo_custom)
-        }
-      });
+          motivo_suspension
+        }, { onConflict: 'negocio_id' });
+
+      if (gobError) {
+        throw gobError;
+      }
 
       const modalEl = $('#modalEditarNegocio');
       if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
@@ -1275,23 +1535,60 @@ if ($('#formEditarNegocio')) {
 }
 
 // =============================================================================
-// MODAL ELIMINACIÓN SEGURA DE NEGOCIO + RESPALDO + EDGE FUNCTION 'eliminar-negocio'
+// MODAL ELIMINACIÓN EN DOS PASOS (SNAPSHOT OBLIGATORIO + EDGE FUNCTION)
 // =============================================================================
+function actualizarEstadoBotonesEliminar() {
+  const negId = String($('#deleteNegId')?.value || '').trim();
+  const expectedSlug = String($('#deleteNegSlugEsperado')?.value || '').trim();
+  const typedSlug = String($('#deleteConfirmSlugInput')?.value || '').trim();
+  const backupOk = Boolean(
+    deleteSnapshotState &&
+    deleteSnapshotState.negocioId === negId &&
+    deleteSnapshotState.snapshotToken
+  );
+
+  if ($('#deleteConfirmBackupCheck')) {
+    $('#deleteConfirmBackupCheck').disabled = !backupOk || eliminacionEnCurso;
+  }
+  if ($('#deleteConfirmSlugInput')) {
+    $('#deleteConfirmSlugInput').disabled = !backupOk || eliminacionEnCurso;
+  }
+
+  const checkConfirmado = Boolean($('#deleteConfirmBackupCheck')?.checked);
+  const slugValido = Boolean(expectedSlug && typedSlug === expectedSlug);
+
+  if ($('#btnConfirmarEliminarNegocio')) {
+    $('#btnConfirmarEliminarNegocio').disabled = !(backupOk && checkConfirmado && slugValido) || eliminacionEnCurso;
+  }
+}
+
 function abrirModalEliminarNegocio(negocioId) {
   const n = allNegocios.find(item => String(item.id) === String(negocioId));
   if (!n) return;
+
+  deleteSnapshotState = null;
 
   if ($('#eliminarNegocioError')) {
     $('#eliminarNegocioError').textContent = '';
     $('#eliminarNegocioError').classList.add('d-none');
   }
+  if ($('#deleteRespaldoEstado')) {
+    $('#deleteRespaldoEstado').textContent = '';
+    $('#deleteRespaldoEstado').classList.add('d-none');
+  }
   if ($('#deleteNegId')) $('#deleteNegId').value = n.id || '';
-  if ($('#deleteNegOwnerId')) $('#deleteNegOwnerId').value = n.owner_id || '';
   if ($('#deleteNegSlugEsperado')) $('#deleteNegSlugEsperado').value = n.slug || '';
   if ($('#deleteNegNombreDisplay')) $('#deleteNegNombreDisplay').textContent = n.nombre || '';
   if ($('#deleteSlugTarget')) $('#deleteSlugTarget').textContent = n.slug || '';
-  if ($('#deleteConfirmSlugInput')) $('#deleteConfirmSlugInput').value = '';
-  if ($('#btnConfirmarEliminarNegocio')) $('#btnConfirmarEliminarNegocio').disabled = true;
+  if ($('#deleteEncryptCheck')) $('#deleteEncryptCheck').checked = false;
+  if ($('#deleteEncryptGroup')) $('#deleteEncryptGroup').classList.add('d-none');
+  if ($('#deleteEncryptPassphrase')) $('#deleteEncryptPassphrase').value = '';
+  if ($('#deleteConfirmBackupCheck')) $('#deleteConfirmBackupCheck').checked = false;
+  if ($('#deleteConfirmSlugInput')) {
+    $('#deleteConfirmSlugInput').value = '';
+    $('#deleteConfirmSlugInput').placeholder = 'Primero descarga el respaldo en el Paso 1';
+  }
+  actualizarEstadoBotonesEliminar();
 
   const modalEl = $('#modalEliminarNegocio');
   if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
@@ -1299,47 +1596,67 @@ function abrirModalEliminarNegocio(negocioId) {
   }
 }
 
-if ($('#deleteConfirmSlugInput')) {
-  $('#deleteConfirmSlugInput').addEventListener('input', (e) => {
-    const esperado = String($('#deleteNegSlugEsperado')?.value || '').trim();
-    const escrito = String(e.target.value || '').trim();
-    if ($('#btnConfirmarEliminarNegocio')) {
-      $('#btnConfirmarEliminarNegocio').disabled = !esperado || escrito !== esperado;
-    }
+if ($('#deleteEncryptCheck')) {
+  $('#deleteEncryptCheck').addEventListener('change', (e) => {
+    const activo = Boolean(e.target.checked);
+    if ($('#deleteEncryptGroup')) $('#deleteEncryptGroup').classList.toggle('d-none', !activo);
+    if (!activo && $('#deleteEncryptPassphrase')) $('#deleteEncryptPassphrase').value = '';
   });
 }
 
-if ($('#formEliminarNegocio')) {
-  $('#formEliminarNegocio').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (eliminacionEnCurso || !supabaseClient) return;
+if ($('#deleteConfirmBackupCheck')) {
+  $('#deleteConfirmBackupCheck').addEventListener('change', actualizarEstadoBotonesEliminar);
+}
+
+if ($('#deleteConfirmSlugInput')) {
+  $('#deleteConfirmSlugInput').addEventListener('input', actualizarEstadoBotonesEliminar);
+}
+
+if ($('#modalEliminarNegocio')) {
+  $('#modalEliminarNegocio').addEventListener('hidden.bs.modal', () => {
+    deleteSnapshotState = null;
+    if ($('#deleteEncryptPassphrase')) $('#deleteEncryptPassphrase').value = '';
+    if ($('#deleteConfirmSlugInput')) $('#deleteConfirmSlugInput').value = '';
+    if ($('#deleteConfirmBackupCheck')) $('#deleteConfirmBackupCheck').checked = false;
+  });
+}
+
+if ($('#btnGenerarRespaldoDelete')) {
+  $('#btnGenerarRespaldoDelete').addEventListener('click', async () => {
+    if (snapshotEnCurso || eliminacionEnCurso || !supabaseClient) return;
 
     const errEl = $('#eliminarNegocioError');
+    const estadoEl = $('#deleteRespaldoEstado');
     if (errEl) {
       errEl.textContent = '';
       errEl.classList.add('d-none');
     }
+    if (estadoEl) {
+      estadoEl.textContent = '';
+      estadoEl.classList.add('d-none');
+    }
 
     const negocio_id = String($('#deleteNegId')?.value || '').trim();
-    const owner_id = String($('#deleteNegOwnerId')?.value || '').trim() || null;
     const expectedSlug = String($('#deleteNegSlugEsperado')?.value || '').trim();
-    const typedSlug = String($('#deleteConfirmSlugInput')?.value || '').trim();
+    const usarCifrado = Boolean($('#deleteEncryptCheck')?.checked);
+    const passphrase = $('#deleteEncryptPassphrase')?.value || '';
 
-    if (!negocio_id || !expectedSlug || typedSlug !== expectedSlug) {
+    if (!negocio_id) return;
+    if (usarCifrado && passphrase.length < 8) {
       if (errEl) {
-        errEl.textContent = `Debes escribir exactamente "${expectedSlug}" para confirmar la eliminación.`;
+        errEl.textContent = 'Para cifrar el respaldo ingresa una frase de paso de al menos 8 caracteres.';
         errEl.classList.remove('d-none');
       }
       return;
     }
 
-    eliminacionEnCurso = true;
-    const btn = $('#btnConfirmarEliminarNegocio');
-    const spinner = $('#spinnerEliminarNegocio');
-    const txtBtn = $('#txtBtnEliminarNegocio');
-    if (btn) btn.disabled = true;
+    snapshotEnCurso = true;
+    const btnSnap = $('#btnGenerarRespaldoDelete');
+    const spinner = $('#spinnerSnapshotDelete');
+    const txtBtn = $('#txtBtnSnapshotDelete');
+    if (btnSnap) btnSnap.disabled = true;
     if (spinner) spinner.classList.remove('d-none');
-    if (txtBtn) txtBtn.textContent = 'Respaldando y eliminando...';
+    if (txtBtn) txtBtn.textContent = 'Generando respaldo...';
 
     try {
       const { data: { session }, error: sessError } = await supabaseClient.auth.getSession();
@@ -1355,17 +1672,122 @@ if ($('#formEliminarNegocio')) {
           'Authorization': `Bearer ${session.access_token}`,
           'apikey': window.SUPABASE_ANON_KEY
         },
-        body: JSON.stringify({ negocio_id, owner_id })
-      }, 15000);
+        body: JSON.stringify({ negocio_id, accion: 'snapshot' })
+      }, 60000);
+
+      const resJson = await resp.json().catch(() => ({}));
+      if (!resp.ok || !resJson.snapshot || !resJson.snapshot_token) {
+        throw new Error(resJson.error || `Error del servidor (${resp.status})`);
+      }
+
+      const nombreArchivo = await descargarRespaldoSnapshot(
+        expectedSlug,
+        resJson.snapshot,
+        resJson.sha256 || '',
+        usarCifrado ? passphrase : ''
+      );
+
+      deleteSnapshotState = {
+        negocioId: negocio_id,
+        slug: expectedSlug,
+        snapshotToken: resJson.snapshot_token,
+        sha256: resJson.sha256 || ''
+      };
+
+      if (estadoEl) {
+        estadoEl.textContent = `Respaldo descargado (${nombreArchivo}). SHA-256: ${String(resJson.sha256 || '').slice(0, 16)}...`;
+        estadoEl.classList.remove('d-none');
+      }
+      if ($('#deleteConfirmSlugInput')) {
+        $('#deleteConfirmSlugInput').placeholder = 'Escribe el slug exacto para habilitar';
+      }
+      if ($('#deleteEncryptPassphrase')) $('#deleteEncryptPassphrase').value = '';
+      actualizarEstadoBotonesEliminar();
+      toast('Respaldo generado y descargado ✅', 'success');
+    } catch (err) {
+      console.error('Error generando snapshot:', err);
+      deleteSnapshotState = null;
+      actualizarEstadoBotonesEliminar();
+      if (errEl) {
+        errEl.textContent = err?.message || 'No se pudo generar el respaldo previo.';
+        errEl.classList.remove('d-none');
+      }
+    } finally {
+      snapshotEnCurso = false;
+      if (btnSnap) btnSnap.disabled = false;
+      if (spinner) spinner.classList.add('d-none');
+      if (txtBtn) txtBtn.innerHTML = '<i class="bi bi-download me-1"></i> Generar y descargar respaldo';
+    }
+  });
+}
+
+if ($('#formEliminarNegocio')) {
+  $('#formEliminarNegocio').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (eliminacionEnCurso || snapshotEnCurso || !supabaseClient) return;
+
+    const errEl = $('#eliminarNegocioError');
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.classList.add('d-none');
+    }
+
+    const negocio_id = String($('#deleteNegId')?.value || '').trim();
+    const expectedSlug = String($('#deleteNegSlugEsperado')?.value || '').trim();
+    const typedSlug = String($('#deleteConfirmSlugInput')?.value || '').trim();
+    const checkConfirmado = Boolean($('#deleteConfirmBackupCheck')?.checked);
+
+    if (!deleteSnapshotState || deleteSnapshotState.negocioId !== negocio_id || !deleteSnapshotState.snapshotToken) {
+      if (errEl) {
+        errEl.textContent = 'Primero debes generar y descargar el respaldo en el Paso 1.';
+        errEl.classList.remove('d-none');
+      }
+      return;
+    }
+
+    if (!checkConfirmado || !expectedSlug || typedSlug !== expectedSlug) {
+      if (errEl) {
+        errEl.textContent = `Marca la confirmación de respaldo y escribe exactamente "${expectedSlug}".`;
+        errEl.classList.remove('d-none');
+      }
+      return;
+    }
+
+    eliminacionEnCurso = true;
+    actualizarEstadoBotonesEliminar();
+    const spinner = $('#spinnerEliminarNegocio');
+    const txtBtn = $('#txtBtnEliminarNegocio');
+    if (spinner) spinner.classList.remove('d-none');
+    if (txtBtn) txtBtn.textContent = 'Eliminando...';
+
+    try {
+      const { data: { session }, error: sessError } = await supabaseClient.auth.getSession();
+      if (sessError || !session || !session.access_token) {
+        throw new Error('Sesión no válida o expirada. Vuelve a iniciar sesión.');
+      }
+
+      const baseUrl = String(window.SUPABASE_URL || '').replace(/\/+$/, '');
+      const resp = await fetchConTimeout(`${baseUrl}/functions/v1/eliminar-negocio`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': window.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({
+          negocio_id,
+          accion: 'eliminar',
+          confirmar_slug: typedSlug,
+          snapshot_token: deleteSnapshotState.snapshotToken
+        })
+      }, 60000);
 
       const resJson = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         throw new Error(resJson.error || `Error del servidor (${resp.status})`);
       }
 
-      if (resJson.deleted && resJson.snapshot) {
-        descargarRespaldoJson(resJson.slug || expectedSlug, resJson.snapshot);
-      }
+      deleteSnapshotState = null;
 
       const modalEl = $('#modalEliminarNegocio');
       if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
@@ -1373,7 +1795,10 @@ if ($('#formEliminarNegocio')) {
         inst.hide();
       }
 
-      toast(`Negocio "${esc(expectedSlug)}" respaldado y eliminado permanentemente ✅`, 'success');
+      toast(`Negocio "${esc(expectedSlug)}" eliminado permanentemente ✅`, 'success');
+      if (resJson.warning) {
+        toast(esc(resJson.warning), 'warning');
+      }
       await cargarNegocios();
     } catch (err) {
       console.error('Error eliminando negocio:', err);
@@ -1383,10 +1808,9 @@ if ($('#formEliminarNegocio')) {
       }
     } finally {
       eliminacionEnCurso = false;
-      const sigueCoincidiendo = String($('#deleteConfirmSlugInput')?.value || '').trim() === expectedSlug;
-      if (btn) btn.disabled = !sigueCoincidiendo;
       if (spinner) spinner.classList.add('d-none');
       if (txtBtn) txtBtn.innerHTML = '<i class="bi bi-trash3-fill me-1"></i> Eliminar Permanentemente';
+      actualizarEstadoBotonesEliminar();
     }
   });
 }
