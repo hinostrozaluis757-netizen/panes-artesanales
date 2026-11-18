@@ -1,0 +1,642 @@
+<!-- ARCHIVO: superadmin.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta name="theme-color" content="#1B4D3E">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com data:; img-src 'self' https: data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self';">
+  <title>Súper Admin · Plataforma SaaS</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+  <style>
+    .filter-group { background-color: #e9ecef; border-radius: 12px; padding: 4px; border: none; display: inline-flex; gap: 2px; }
+    .filter-btn { border: none !important; border-radius: 8px !important; color: #555 !important; font-weight: 600; font-size: 0.85rem; padding: 6px 14px; transition: all 0.25s ease; background-color: transparent !important; }
+    .filter-btn:hover { color: #1B4D3E !important; background-color: rgba(255, 255, 255, 0.5) !important; }
+    .filter-btn.active { background-color: #1B4D3E !important; color: white !important; box-shadow: 0 3px 8px rgba(27, 77, 62, 0.3); }
+    .superadmin-badge {
+      background: #F6F0E2;
+      color: #1B4D3E;
+      font-weight: 700;
+      font-size: 0.72rem;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 50px;
+      display: inline-block;
+    }
+    .form-switch .form-check-input {
+      width: 2.8em;
+      height: 1.4em;
+      cursor: pointer;
+    }
+    .form-switch .form-check-input:checked {
+      background-color: #1B4D3E;
+      border-color: #1B4D3E;
+    }
+    .owner-id-code {
+      font-size: 0.78rem;
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 3px 8px;
+      color: #495057;
+    }
+    .btn-verde-bosque {
+      background: linear-gradient(135deg, #1B4D3E, #2b6b56) !important;
+      border: none !important;
+      color: #fff !important;
+      border-radius: 50px !important;
+      box-shadow: 0 4px 12px rgba(27, 77, 62, 0.3) !important;
+    }
+    .btn-verde-bosque:hover {
+      opacity: 0.95;
+      color: #fff !important;
+    }
+    .creds-box {
+      background: #f8faf9;
+      border: 1px dashed #1B4D3E;
+      border-radius: 16px;
+    }
+    .audit-json-pre {
+      max-height: 220px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+
+<!-- BANNER DE ERROR DE CONFIGURACIÓN (SIN alert() BLOQUEANTES) -->
+<div id="configErrorBanner" class="container py-5 d-none">
+  <div class="alert alert-danger border-0 shadow-sm rounded-4 p-4 mb-0" role="alert">
+    <div class="d-flex align-items-start gap-3">
+      <i class="bi bi-shield-exclamation fs-2 text-danger"></i>
+      <div>
+        <h5 class="fw-bold mb-1">Error de configuración del panel</h5>
+        <p class="mb-0 small" id="configErrorBannerMsg"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VISTA 1: LOGIN SÚPER ADMIN -->
+<div id="loginView" class="login-view">
+  <div class="login-card">
+    <div class="text-center mb-4">
+      <div class="logo-circle mx-auto mb-3"><i class="bi bi-shield-check fs-2"></i></div>
+      <span class="superadmin-badge mb-2">Acceso Maestro</span>
+      <h3 class="fw-bold mb-1" style="font-family: 'Playfair Display', serif; color: #1B4D3E;">Súper Admin SaaS</h3>
+      <p class="text-muted small mb-0">Alta de inquilinos y control global de tiendas</p>
+    </div>
+    <form id="loginForm">
+      <div class="mb-3">
+        <label for="loginEmail" class="form-label small fw-bold">Correo Súper Admin</label>
+        <input type="email" class="form-control" id="loginEmail" placeholder="correo@ejemplo.com" required>
+      </div>
+      <div class="mb-3">
+        <label for="loginPassword" class="form-label small fw-bold">Contraseña</label>
+        <input type="password" class="form-control" id="loginPassword" required>
+      </div>
+      <button type="submit" class="btn btn-verde-bosque w-100 py-2 fw-bold" id="loginBtn">
+        <i class="bi bi-box-arrow-in-right me-1"></i> Ingresar al Panel Maestro
+      </button>
+      <div class="alert alert-danger mt-3 d-none small py-2" id="loginError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- VISTA 2: ACCESO DENEGADO -->
+<div id="accessDeniedView" class="login-view d-none">
+  <div class="login-card text-center">
+    <div class="logo-circle mx-auto mb-3" style="background: #F8D7DA; color: #842029;">
+      <i class="bi bi-shield-x fs-2"></i>
+    </div>
+    <h3 class="fw-bold text-danger mb-2">Acceso Denegado</h3>
+    <p class="text-muted small mb-3">
+      Este panel está restringido exclusivamente al Súper Administrador autorizado en la plataforma.
+    </p>
+    <div class="bg-light border rounded-3 p-2 mb-4 small">
+      <span class="text-muted d-block">Sesión detectada:</span>
+      <strong class="text-dark" id="deniedUserEmail">—</strong>
+    </div>
+    <div class="d-grid gap-2">
+      <button type="button" class="btn btn-danger rounded-pill fw-bold py-2" id="deniedLogoutBtn">
+        <i class="bi bi-box-arrow-right me-1"></i> Cerrar sesión e intentar con otra cuenta
+      </button>
+      <a href="admin.html" class="btn btn-outline-secondary rounded-pill py-2 small">
+        <i class="bi bi-shop me-1"></i> Ir al Admin de mi tienda
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- VISTA 3: DASHBOARD SÚPER ADMIN -->
+<div id="dashboardView" class="dashboard-view d-none">
+
+  <!-- NAVBAR -->
+  <nav class="navbar admin-navbar px-3 mb-4">
+    <div class="container-fluid">
+      <span class="navbar-brand fw-bold mb-0 d-flex align-items-center gap-2" style="font-family: 'Playfair Display', serif; color: #1B4D3E; font-size: 1.4rem;">
+        <i class="bi bi-shield-check"></i> Súper Admin SaaS
+      </span>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="small text-muted d-none d-md-inline badge bg-light text-dark px-3 py-2" id="userEmail"></span>
+        <button type="button" class="btn btn-sm btn-outline-dark rounded-pill px-3" id="btnAbrirAuditoria" title="Ver historial inmutable de auditoría">
+          <i class="bi bi-journal-check me-1"></i> Auditoría
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" id="btnRecargarNegocios" title="Recargar listado">
+          <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3" id="logoutBtn">
+          <i class="bi bi-box-arrow-right me-1"></i> Salir
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid py-2 px-3 px-md-4 pb-5">
+
+    <!-- CABECERA Y BOTÓN PRINCIPAL -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+      <div>
+        <h4 class="fw-bold mb-1" style="color: #1B4D3E;">🏢 Gestión de Inquilinos</h4>
+        <p class="text-muted small mb-0">Crea nuevos negocios con su dueño, gestiona planes/vencimientos y audita cada acción en tiempo real.</p>
+      </div>
+      <button type="button" class="btn btn-verde-bosque fw-bold px-4 py-2" id="btnAbrirCrearNegocio">
+        <i class="bi bi-plus-circle me-1"></i> Crear Nuevo Negocio
+      </button>
+    </div>
+
+    <!-- KPIs RÁPIDOS -->
+    <div class="row g-4 mb-4">
+      <div class="col-12 col-md-4">
+        <div class="kpi-card kpi-green">
+          <div class="kpi-icon"><i class="bi bi-buildings"></i></div>
+          <div class="kpi-label">Total Negocios</div>
+          <div class="kpi-value" id="kpiTotalNegocios">0</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-icon"><i class="bi bi-check-circle-fill"></i></div>
+          <div class="kpi-label">Negocios Activos</div>
+          <div class="kpi-value" id="kpiNegociosActivos">0</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="kpi-card kpi-orange">
+          <div class="kpi-icon"><i class="bi bi-pause-circle-fill"></i></div>
+          <div class="kpi-label">Negocios Suspendidos</div>
+          <div class="kpi-value" id="kpiNegociosSuspendidos">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TABLA DE INQUILINOS -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-table me-2 text-success"></i>Directorio de Negocios</h6>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="btn-group filter-group" role="group" id="tenantStatusFilter">
+              <button type="button" class="btn filter-btn active" data-status="todos">Todos</button>
+              <button type="button" class="btn filter-btn" data-status="activos">Activos</button>
+              <button type="button" class="btn filter-btn" data-status="suspendidos">Suspendidos</button>
+            </div>
+            <input type="search" class="form-control form-control-sm" id="searchTenants" placeholder="Buscar negocio, slug, plan o WhatsApp..." style="width: 250px;">
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Negocio</th>
+                <th>Slug / Tienda</th>
+                <th>Plan y Vencimiento</th>
+                <th>WhatsApp</th>
+                <th>Fecha de Registro</th>
+                <th>Owner ID</th>
+                <th>Estado</th>
+                <th class="text-end">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tenantsTableBody">
+              <tr>
+                <td colspan="8" class="text-center text-muted py-4">Cargando negocios...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL: CREAR NUEVO NEGOCIO -->
+<div class="modal fade" id="modalCrearNegocio" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header text-white" style="background: linear-gradient(135deg, #12352A, #1B4D3E);">
+        <h5 class="modal-title fw-bold mb-0"><i class="bi bi-shop-window me-2"></i>Crear Nuevo Negocio</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <form id="formCrearNegocio">
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label for="negNombre" class="form-label small fw-bold">Nombre del negocio *</label>
+            <input type="text" class="form-control" id="negNombre" placeholder="Ej. Panadería San Martín" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="negSlug" class="form-label small fw-bold">Slug (URL de tienda) *</label>
+            <div class="input-group">
+              <span class="input-group-text small text-muted">?tienda=</span>
+              <input type="text" class="form-control" id="negSlug" placeholder="panaderia-san-martin" required>
+            </div>
+            <div class="form-text small" id="slugUrlPreview">Se autogenera desde el nombre, puedes editarlo manualmente.</div>
+          </div>
+
+          <div class="mb-3">
+            <label for="negTipo" class="form-label small fw-bold">Giro / Plantilla del negocio *</label>
+            <select class="form-select" id="negTipo" required>
+              <optgroup label="Alimentos y Bebidas">
+                <option value="panaderia">Panadería / Pastelería</option>
+                <option value="restaurante">Restaurante / Comida Rápida</option>
+                <option value="cafeteria">Cafetería / Juguería / Heladería</option>
+                <option value="licoreria">Licorería / Bodega de Licores</option>
+              </optgroup>
+              <optgroup label="Salud y Cuidado">
+                <option value="botica">Botica / Farmacia</option>
+                <option value="veterinaria">Veterinaria / Pet Shop</option>
+                <option value="peluqueria">Peluquería / Barbería / Spa</option>
+              </optgroup>
+              <optgroup label="Comercio y Retail">
+                <option value="minimarket">Minimarket / Bodega / Abarrotes</option>
+                <option value="ropa">Ropa / Boutique / Calzado</option>
+                <option value="libreria">Librería / Bazar / Papelería</option>
+                <option value="general" selected>Tienda General / Otros</option>
+              </optgroup>
+              <optgroup label="Servicios Técnicos">
+                <option value="ferreteria">Ferretería / Construcción</option>
+                <option value="taller">Taller Mecánico / Repuestos</option>
+              </optgroup>
+            </select>
+            <div class="form-text small">Define los colores, portada e imágenes por defecto de la tienda.</div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              <label for="negPlan" class="form-label small fw-bold">Plan Comercial *</label>
+              <select class="form-select" id="negPlan" required>
+                <option value="basico" selected>Básico</option>
+                <option value="pro">Pro</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label for="negFechaVencimiento" class="form-label small fw-bold">Vencimiento del Plan</label>
+              <input type="date" class="form-control" id="negFechaVencimiento">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="negWhatsapp" class="form-label small fw-bold">WhatsApp (Opcional)</label>
+            <input type="tel" class="form-control" id="negWhatsapp" placeholder="51999999999">
+            <div class="form-text small">Código de país + número sin signos (ej. 51999999999).</div>
+          </div>
+
+          <hr class="my-3">
+          <h6 class="fw-bold small text-uppercase text-muted mb-3"><i class="bi bi-person-badge me-1"></i>Credenciales del Dueño</h6>
+
+          <div class="mb-3">
+            <label for="negEmailDueno" class="form-label small fw-bold">Correo del dueño *</label>
+            <input type="email" class="form-control" id="negEmailDueno" placeholder="dueno@negocio.com" required>
+          </div>
+
+          <div class="mb-2">
+            <label for="negPassword" class="form-label small fw-bold">Contraseña temporal *</label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="negPassword" minlength="6" placeholder="Mínimo 6 caracteres" required>
+              <button type="button" class="btn btn-outline-secondary" id="btnGenerarPassword" title="Generar contraseña aleatoria segura">
+                <i class="bi bi-key me-1"></i> Generar
+              </button>
+              <button type="button" class="btn btn-outline-secondary" id="btnTogglePassword" title="Mostrar u ocultar contraseña">
+                <i class="bi bi-eye-slash" id="iconTogglePassword"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="alert alert-danger mt-3 mb-0 d-none small py-2" id="crearNegocioError"></div>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-verde-bosque fw-bold px-4" id="btnSubmitCrearNegocio">
+            <span class="spinner-border spinner-border-sm me-2 d-none" id="spinnerCrearNegocio" role="status" aria-hidden="true"></span>
+            <span id="txtBtnCrearNegocio"><i class="bi bi-check2-circle me-1"></i> Dar de Alta Negocio</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: RESUMEN DE CREDENCIALES CREADAS -->
+<div class="modal fade" id="modalCredencialesCreadas" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title fw-bold mb-0"><i class="bi bi-check-circle-fill me-2"></i>Negocio Creado con Éxito</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body p-4">
+        <p class="small text-muted mb-3">
+          La cuenta del dueño y la tienda de <strong class="text-dark" id="credNegocioNombre"></strong> ya están listas para operar:
+        </p>
+        <div class="creds-box p-3 small">
+          <div class="mb-2">
+            <span class="text-muted d-block">Panel Admin:</span>
+            <strong class="text-break" id="credAdminUrl"></strong>
+          </div>
+          <div class="mb-2">
+            <span class="text-muted d-block">Tienda Pública:</span>
+            <strong class="text-break" id="credTiendaUrl"></strong>
+          </div>
+          <div class="mb-2">
+            <span class="text-muted d-block">Correo de acceso:</span>
+            <strong id="credEmail"></strong>
+          </div>
+          <div>
+            <span class="text-muted d-block">Contraseña temporal:</span>
+            <code class="fs-6 fw-bold text-dark" id="credPassword"></code>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer bg-light d-flex justify-content-between flex-wrap gap-2">
+        <a href="#" target="_blank" rel="noopener" class="btn btn-outline-success rounded-pill d-none" id="btnEnviarWhatsAppDirecto">
+          <i class="bi bi-whatsapp me-1"></i> Abrir WhatsApp
+        </a>
+        <div class="d-flex gap-2 ms-auto">
+          <button type="button" class="btn btn-success fw-bold" id="btnCopiarWhatsAppCreds">
+            <i class="bi bi-clipboard-check me-1"></i> Copiar credenciales para WhatsApp
+          </button>
+          <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDITAR IDENTIDAD, PLAN Y DATOS DEL NEGOCIO -->
+<div class="modal fade" id="modalEditarNegocio" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header text-white" style="background: linear-gradient(135deg, #12352A, #1B4D3E);">
+        <div>
+          <h5 class="modal-title fw-bold mb-0"><i class="bi bi-palette2 me-2"></i>Editar Identidad, Plan y Datos del Negocio</h5>
+          <small class="opacity-75" id="editNegSlugBadge"></small>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <form id="formEditarNegocio">
+        <div class="modal-body p-4">
+          <input type="hidden" id="editNegId">
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label for="editNegNombre" class="form-label small fw-bold">Nombre del negocio *</label>
+              <input type="text" class="form-control" id="editNegNombre" required>
+            </div>
+            <div class="col-md-6">
+              <label for="editNegWhatsapp" class="form-label small fw-bold">WhatsApp</label>
+              <input type="tel" class="form-control" id="editNegWhatsapp" placeholder="51999999999">
+            </div>
+            <div class="col-12">
+              <label for="editNegTipo" class="form-label small fw-bold">Giro / Plantilla del negocio *</label>
+              <select class="form-select" id="editNegTipo" required>
+                <optgroup label="Alimentos y Bebidas">
+                  <option value="panaderia">Panadería / Pastelería</option>
+                  <option value="restaurante">Restaurante / Comida Rápida</option>
+                  <option value="cafeteria">Cafetería / Juguería / Heladería</option>
+                  <option value="licoreria">Licorería / Bodega de Licores</option>
+                </optgroup>
+                <optgroup label="Salud y Cuidado">
+                  <option value="botica">Botica / Farmacia</option>
+                  <option value="veterinaria">Veterinaria / Pet Shop</option>
+                  <option value="peluqueria">Peluquería / Barbería / Spa</option>
+                </optgroup>
+                <optgroup label="Comercio y Retail">
+                  <option value="minimarket">Minimarket / Bodega / Abarrotes</option>
+                  <option value="ropa">Ropa / Boutique / Calzado</option>
+                  <option value="libreria">Librería / Bazar / Papelería</option>
+                  <option value="general">Tienda General / Otros</option>
+                </optgroup>
+                <optgroup label="Servicios Técnicos">
+                  <option value="ferreteria">Ferretería / Construcción</option>
+                  <option value="taller">Taller Mecánico / Repuestos</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+
+          <hr class="my-3">
+          <h6 class="fw-bold small text-uppercase text-muted mb-3"><i class="bi bi-award me-1"></i>Gobernanza Comercial</h6>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label for="editNegPlan" class="form-label small fw-bold">Plan *</label>
+              <select class="form-select" id="editNegPlan" required>
+                <option value="basico">Básico</option>
+                <option value="pro">Pro</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="editNegFechaVencimiento" class="form-label small fw-bold">Fecha de Vencimiento</label>
+              <input type="date" class="form-control" id="editNegFechaVencimiento">
+            </div>
+            <div class="col-md-4">
+              <label for="editNegMotivoSuspension" class="form-label small fw-bold">Motivo de suspensión (Opcional)</label>
+              <input type="text" class="form-control" id="editNegMotivoSuspension" maxlength="300" placeholder="Ej. Pago vencido o solicitud">
+            </div>
+          </div>
+
+          <hr class="my-3">
+          <h6 class="fw-bold small text-uppercase text-muted mb-3"><i class="bi bi-brush me-1"></i>Personalización Visual (Custom Overrides)</h6>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label for="editLogoUrl" class="form-label small fw-bold">URL del Logo</label>
+              <div class="input-group">
+                <input type="url" class="form-control" id="editLogoUrl" placeholder="https://.../logo.png">
+                <button type="button" class="btn btn-outline-secondary" id="btnLimpiarLogoUrl" title="Limpiar URL del logo">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+              <div class="mt-2 d-flex align-items-center gap-2 d-none" id="editLogoPreviewWrap">
+                <img id="editLogoPreview" src="" alt="Vista previa del logo" class="rounded border bg-white" style="width: 48px; height: 48px; object-fit: contain;">
+                <span class="small text-muted">Vista previa del logo</span>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label for="editHeroImagenUrl" class="form-label small fw-bold">URL de Imagen de Portada (Hero)</label>
+              <div class="input-group">
+                <input type="url" class="form-control" id="editHeroImagenUrl" placeholder="https://.../portada.jpg">
+                <button type="button" class="btn btn-outline-secondary" id="btnLimpiarHeroUrl" title="Limpiar imagen de portada">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+              <div class="mt-2 d-none" id="editHeroPreviewWrap">
+                <img id="editHeroPreview" src="" alt="Vista previa de portada" class="rounded border w-100" style="height: 68px; object-fit: cover;">
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label for="editHeroTituloCustom" class="form-label small fw-bold">Título Personalizado de Portada</label>
+              <input type="text" class="form-control" id="editHeroTituloCustom" maxlength="140" placeholder="Dejar vacío para usar el título de la plantilla">
+            </div>
+          </div>
+
+          <div class="border rounded-3 p-3 bg-light">
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" role="switch" id="editActivarColores">
+              <label class="form-check-label fw-bold small" for="editActivarColores">Activar colores personalizados</label>
+              <div class="form-text small">Si está desactivado, la tienda usará automáticamente los colores de su plantilla de giro.</div>
+            </div>
+
+            <div class="row g-3" id="editColoresPickers">
+              <div class="col-sm-6">
+                <label for="editColorPrimario" class="form-label small fw-semibold mb-1">Color Primario (Marca)</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input type="color" class="form-control form-control-color" id="editColorPrimario" value="#1B4D3E" title="Elegir color primario">
+                  <code class="small text-muted" id="editColorPrimarioCode">#1B4D3E</code>
+                </div>
+              </div>
+              <div class="col-sm-6">
+                <label for="editColorSecundario" class="form-label small fw-semibold mb-1">Color Secundario (Botones y Badges)</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input type="color" class="form-control form-control-color" id="editColorSecundario" value="#D9822B" title="Elegir color secundario">
+                  <code class="small text-muted" id="editColorSecundarioCode">#D9822B</code>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-danger mt-3 mb-0 d-none small py-2" id="editarNegocioError"></div>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-verde-bosque fw-bold px-4" id="btnSubmitEditarNegocio">
+            <span class="spinner-border spinner-border-sm me-2 d-none" id="spinnerEditarNegocio" role="status" aria-hidden="true"></span>
+            <span id="txtBtnEditarNegocio"><i class="bi bi-save me-1"></i> Guardar Cambios</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: HISTORIAL DE AUDITORÍA INMUTABLE (ISO 19011) -->
+<div class="modal fade" id="modalAuditoria" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header text-white" style="background: linear-gradient(135deg, #12352A, #1B4D3E);">
+        <div>
+          <h5 class="modal-title fw-bold mb-0"><i class="bi bi-journal-check me-2"></i>Historial de Auditoría Inmutable</h5>
+          <small class="opacity-75">Últimos 50 eventos registrados en <code>logs_auditoria</code> (ISO 9001 / ISO 19011)</small>
+        </div>
+        <div class="d-flex align-items-center gap-2 ms-auto">
+          <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-3" id="btnRecargarAuditoria">
+            <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+          </button>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+      </div>
+      <div class="modal-body p-3 p-md-4">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Fecha</th>
+                <th>Acción</th>
+                <th>Negocio / Entidad</th>
+                <th>Actor</th>
+                <th>Detalles</th>
+              </tr>
+            </thead>
+            <tbody id="auditoriaTableBody">
+              <tr>
+                <td colspan="5" class="text-center text-muted py-4">Abre el historial para cargar eventos...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer bg-light">
+        <span class="small text-muted me-auto"><i class="bi bi-lock-fill me-1"></i>Registros de solo inserción: protegidos contra edición o borrado.</span>
+        <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CONFIRMAR ELIMINACIÓN SEGURA DE NEGOCIO -->
+<div class="modal fade" id="modalEliminarNegocio" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title fw-bold mb-0"><i class="bi bi-exclamation-triangle-fill me-2"></i>Eliminar Negocio Permanentemente</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <form id="formEliminarNegocio">
+        <div class="modal-body p-4">
+          <input type="hidden" id="deleteNegId">
+          <input type="hidden" id="deleteNegOwnerId">
+          <input type="hidden" id="deleteNegSlugEsperado">
+
+          <div class="alert alert-danger small mb-3">
+            <strong>Acción irreversible:</strong> Antes de eliminar, se descargará un respaldo JSON completo. Luego se eliminará el negocio <strong id="deleteNegNombreDisplay"></strong>, en cascada sus <strong>productos, lotes y ventas</strong>, y finalmente la cuenta del dueño en Auth.
+          </div>
+
+          <p class="small text-muted mb-2">
+            Para confirmar, escribe exactamente el slug del negocio: <code class="fs-6 fw-bold text-danger" id="deleteSlugTarget"></code>
+          </p>
+          <input
+            type="text"
+            class="form-control"
+            id="deleteConfirmSlugInput"
+            placeholder="Escribe el slug exacto para habilitar"
+            autocomplete="off"
+            required
+          >
+          <div class="alert alert-danger mt-3 mb-0 d-none small py-2" id="eliminarNegocioError"></div>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-danger rounded-pill fw-bold px-4" id="btnConfirmarEliminarNegocio" disabled>
+            <span class="spinner-border spinner-border-sm me-2 d-none" id="spinnerEliminarNegocio" role="status" aria-hidden="true"></span>
+            <span id="txtBtnEliminarNegocio"><i class="bi bi-trash3-fill me-1"></i> Eliminar Permanentemente</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index: 2000;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/superadmin.js"></script>
+</body>
+</html>

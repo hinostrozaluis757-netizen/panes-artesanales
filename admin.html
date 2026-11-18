@@ -1,0 +1,678 @@
+<!-- ARCHIVO: admin.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <link rel="manifest" href="manifest-admin.json">
+  <meta name="theme-color" content="#1B4D3E">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin - Panel de Administración</title>
+  
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+  <style>
+    /* Estilos para los filtros de fecha (Premium) */
+    .filter-group { background-color: #e9ecef; border-radius: 12px; padding: 4px; border: none; display: inline-flex; gap: 2px; }
+    .filter-btn { border: none !important; border-radius: 8px !important; color: #555 !important; font-weight: 600; font-size: 0.85rem; padding: 6px 16px; transition: all 0.25s ease; background-color: transparent !important; }
+    .filter-btn:hover { color: #1B4D3E !important; background-color: rgba(255, 255, 255, 0.5) !important; }
+    .filter-btn.active { background-color: #1B4D3E !important; color: white !important; box-shadow: 0 3px 8px rgba(27, 77, 62, 0.3); }
+    .estado-aceptado  { background: #CFE2FF; color: #084298; }
+    .estado-en_camino { background: #FFE5D0; color: #984C0C; }
+    .btn-yape-express { background-color: #742284; border-color: #742284; color: #fff; transition: all 0.2s ease; }
+    .btn-yape-express:hover, .btn-yape-express:focus { background-color: #5b1968; border-color: #5b1968; color: #fff; }
+    .btn-yape-express:disabled { background-color: #742284; border-color: #742284; color: #fff; opacity: 0.6; }
+    .btn-producto-express { min-height: 112px; border-radius: 14px; transition: transform 0.12s ease, box-shadow 0.15s ease; }
+    .btn-producto-express:not(:disabled):active { transform: scale(0.96); }
+    .total-express-input { font-size: calc(1.425rem + 2.1vw) !important; line-height: 1.2 !important; }
+    @media (min-width: 1200px) { .total-express-input { font-size: 3rem !important; } }
+    .total-express-input:disabled { background-color: transparent !important; opacity: 0.65; }
+    .btn-express-cobro { border-radius: 50px !important; padding: 1rem 1.25rem !important; }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginView" class="login-view">
+  <div class="login-card">
+    <div class="text-center mb-4">
+      <div class="logo-circle mx-auto mb-3"><i class="bi bi-shop fs-2"></i></div>
+      <h3 class="fw-bold mb-1" id="loginBrandTitle">Panel Administrativo</h3>
+      <p class="text-muted small mb-0">Gestión de Ventas e Inventario</p>
+    </div>
+    <form id="loginForm">
+      <div class="mb-3"><label class="form-label small fw-bold">Email</label><input type="email" class="form-control" id="loginEmail" required></div>
+      <div class="mb-3"><label class="form-label small fw-bold">Contraseña</label><input type="password" class="form-control" id="loginPassword" required></div>
+      <button type="submit" class="btn btn-primary w-100 py-2 fw-bold" id="loginBtn"><i class="bi bi-box-arrow-in-right me-1"></i> Ingresar</button>
+      <div class="alert alert-danger mt-3 d-none small py-2" id="loginError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboardView" class="dashboard-view d-none">
+  
+  <!-- NAVBAR PREMIUM -->
+  <nav class="navbar admin-navbar px-3 mb-4">
+    <div class="container-fluid">
+      <span class="navbar-brand fw-bold mb-0 d-flex align-items-center gap-2" id="adminBrandTitle" style="font-family: 'Playfair Display', serif; color: #1B4D3E; font-size: 1.4rem;">
+        <i class="bi bi-shop"></i> Admin
+      </span>
+      <div class="d-flex flex-wrap gap-2 gap-md-3 align-items-center">
+        <ul class="nav nav-pills flex-wrap" id="adminTabs">
+          <li class="nav-item"><button class="nav-link active" data-target="tabPedidos"><i class="bi bi-graph-up-arrow me-1"></i> Ventas</button></li>
+          <li class="nav-item"><button class="nav-link" data-target="tabProductos"><i class="bi bi-box-seam me-1"></i> Productos</button></li>
+          <li class="nav-item"><button class="nav-link" data-target="tabCaja"><i class="bi bi-cash-stack me-1"></i> Cierre de Caja</button></li>
+          <li class="nav-item"><button class="nav-link" data-target="tabPOS"><i class="bi bi-qr-code-scan me-1"></i> POS Físico</button></li>
+          <li class="nav-item"><button class="nav-link" data-target="tabVentaExpress"><i class="bi bi-lightning-charge-fill me-1"></i> Venta Rápida</button></li>
+          <li class="nav-item"><button class="nav-link" data-target="tabUbicacion"><i class="bi bi-geo-alt me-1"></i> Mi Ubicación</button></li>
+        </ul>
+        <a href="index.html" target="_blank" class="btn btn-sm btn-outline-success rounded-pill px-3 d-none d-sm-inline-flex align-items-center" id="btnVerTienda"><i class="bi bi-box-arrow-up-right me-1"></i> Ver tienda</a>
+        <span class="small text-muted d-none d-md-inline badge bg-light text-dark px-3 py-2" id="userEmail"></span>
+        <button class="btn btn-sm btn-outline-danger rounded-pill px-3" id="logoutBtn"><i class="bi bi-box-arrow-right me-1"></i> Salir</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid py-4 px-3 px-md-4">
+    
+    <!-- PESTAÑA 1: PEDIDOS -->
+    <div id="tabPedidos">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <h4 class="fw-bold mb-0">📊 Dashboard</h4>
+        <div class="btn-group filter-group" role="group" id="periodFilter">
+          <button class="btn filter-btn active" data-period="hoy">Hoy</button>
+          <button class="btn filter-btn" data-period="semana">Semana</button>
+          <button class="btn filter-btn" data-period="mes">Mes</button>
+          <button class="btn filter-btn" data-period="ano">Año</button>
+          <button class="btn filter-btn" data-period="todo">Todo</button>
+        </div>
+      </div>
+
+      <div class="row g-4 mb-4">
+        <div class="col-6 col-lg-3"><div class="kpi-card kpi-green"><div class="kpi-icon"><i class="bi bi-wallet2"></i></div><div class="kpi-label">Ingresos</div><div class="kpi-value" id="kpiIngresos">S/ 0.00</div></div></div>
+        <div class="col-6 col-lg-3"><div class="kpi-card kpi-orange"><div class="kpi-icon"><i class="bi bi-bag-check-fill"></i></div><div class="kpi-label">Pedidos</div><div class="kpi-value" id="kpiPedidos">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="kpi-card kpi-blue"><div class="kpi-icon"><i class="bi bi-person-heart"></i></div><div class="kpi-label">Clientes</div><div class="kpi-value" id="kpiClientes">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="kpi-card kpi-purple"><div class="kpi-icon"><i class="bi bi-receipt-cutoff"></i></div><div class="kpi-label">Ticket promedio</div><div class="kpi-value" id="kpiTicket">S/ 0.00</div></div></div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-lg-8"><div class="card border-0 shadow-sm h-100"><div class="card-body"><h6 class="fw-bold mb-3">📈 Ingresos por día</h6><canvas id="chartDaily" height="100"></canvas></div></div></div>
+        <div class="col-lg-4"><div class="card border-0 shadow-sm h-100"><div class="card-body"><h6 class="fw-bold mb-3">🥇 Top productos</h6><div id="topProducts"></div></div></div></div>
+      </div>
+
+      <!-- CONTROL DE VENCIMIENTOS (PRÓXIMOS 30 DÍAS) -->
+      <div class="card border-0 shadow-sm mb-4" id="panelAlertasVencimiento">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h6 class="fw-bold mb-0"><i class="bi bi-calendar-x me-2 text-warning"></i>Control de Vencimientos (Próximos 30 días)</h6>
+            <span class="badge bg-secondary rounded-pill px-3 py-2" id="alertasVencimientoBadge">Cargando...</span>
+          </div>
+          <div id="alertasVencimientoList">
+            <p class="text-muted small mb-0">Verificando inventario de lotes...</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h6 class="fw-bold mb-0">🧾 Pedidos recientes</h6>
+            <div class="d-flex gap-2">
+              <input type="text" class="form-control form-control-sm" id="searchOrders" placeholder="Buscar..." style="width: 200px;">
+              <button class="btn btn-sm btn-success" id="btnExportCSV"><i class="bi bi-file-earmark-excel me-1"></i> Exportar</button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light"><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Teléfono</th><th>Entrega</th><th>Pago</th><th class="text-end">Total</th><th>Estado</th><th>Comp.</th></tr></thead>
+              <tbody id="ordersTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PESTAÑA 2: PRODUCTOS -->
+    <div id="tabProductos" class="d-none">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold mb-0" id="productosSectionTitle">Gestión de Productos</h4>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#productModal" onclick="clearForm()"><i class="bi bi-plus-circle me-1"></i> Nuevo Producto</button>
+      </div>
+      <div class="d-flex flex-wrap gap-2 mb-4" id="adminCategoryFilter">
+        <button class="btn btn-outline-secondary active" data-filter="Todos">Todos</button>
+      </div>
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead class="table-light"><tr><th>Foto</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Código QR</th><th>Categoría</th><th>Acciones</th></tr></thead>
+              <tbody id="productsTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PESTAÑA 3: CIERRE DE CAJA -->
+    <div id="tabCaja" class="d-none">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <h4 class="fw-bold mb-0">💰 Cierre de Caja</h4>
+        
+        <!-- BOTONES DE FILTRO Y BOTÓN DE IMPRIMIR -->
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <div class="btn-group filter-group" role="group" id="cajaPeriodFilter">
+            <button class="btn filter-btn active" data-period="hoy">Hoy</button>
+            <button class="btn filter-btn" data-period="semana">Esta Semana</button>
+            <button class="btn filter-btn" data-period="mes">Este Mes</button>
+          </div>
+          <button class="btn btn-dark rounded-pill fw-bold px-3 shadow-sm" onclick="imprimirCierreCaja()">
+            <i class="bi bi-printer me-1"></i> Imprimir / PDF
+          </button>
+        </div>
+      </div>
+
+      <!-- NUEVA TARJETA: TOTAL DIGITAL -->
+      <div class="col-12 mt-2">
+        <div class="alert alert-success d-flex justify-content-between align-items-center shadow-sm" style="border-radius: 15px; border-left: 5px solid #198754;">
+          <div class="d-flex align-items-center gap-3">
+            <i class="bi bi-bank2 fs-3"></i>
+            <div>
+              <strong class="d-block">Total Digital (Yape + Tarjeta)</strong>
+              <small class="text-muted">Dinero que entró a tus cuentas (sin contar efectivo)</small>
+            </div>
+          </div>
+          <h3 class="mb-0 fw-bold" id="cajaTotalDigital">S/ 0.00</h3>
+        </div>
+      </div>
+
+      <div class="row g-4 mb-4">
+        <div class="col-12 col-md-4">
+          <div class="kpi-card kpi-green">
+            <div class="kpi-icon"><i class="bi bi-cash-coin"></i></div>
+            <div class="kpi-label">Efectivo (Contra entrega)</div>
+            <div class="kpi-value" id="cajaEfectivo">S/ 0.00</div>
+            <div class="small mt-2 opacity-75" id="cajaEfectivoCount">0 pedidos</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="kpi-card kpi-purple">
+            <div class="kpi-icon"><i class="bi bi-phone"></i></div>
+            <div class="kpi-label">Yape / Plin</div>
+            <div class="kpi-value" id="cajaYape">S/ 0.00</div>
+            <div class="small mt-2 opacity-75" id="cajaYapeCount">0 pedidos</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="kpi-card kpi-blue">
+            <div class="kpi-icon"><i class="bi bi-bank"></i></div>
+            <div class="kpi-label">Transferencias (BCP / BBVA)</div>
+            <div class="kpi-value" id="cajaBanco">S/ 0.00</div>
+            <div class="small mt-2 opacity-75" id="cajaBancoCount">0 pedidos</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <h6 class="fw-bold mb-3">🧾 Detalle de movimientos (Solo pedidos válidos)</h6>
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr><th>Pedido</th><th>Hora</th><th>Cliente</th><th>Método</th><th class="text-end">Monto</th><th class="text-center">Comprobante</th></tr>
+              </thead>
+              <tbody id="cajaTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PESTAÑA 4: POS FÍSICO -->
+    <div id="tabPOS" class="d-none">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <h4 class="fw-bold mb-0">🛒 Punto de Venta Físico (POS)</h4>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-secondary rounded-pill px-3 py-2" id="posScannerBadge">Cámara inactiva</span>
+          <button type="button" class="btn btn-sm btn-outline-dark rounded-pill px-3" id="btnPosRestartCamera">
+            <i class="bi bi-camera-video me-1"></i> Reiniciar cámara
+          </button>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <!-- BLOQUE IZQUIERDO: CAPTURA QR Y MANUAL -->
+        <div class="col-lg-5">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <h6 class="fw-bold mb-3"><i class="bi bi-qr-code-scan me-2 text-success"></i>Escáner de Productos</h6>
+
+              <div id="posScannerStatus" class="alert alert-secondary small py-2 mb-3">
+                La cámara se iniciará automáticamente al abrir el POS.
+              </div>
+
+              <div id="posLookupLoader" class="alert alert-info d-none align-items-center gap-2 small py-2 mb-3">
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                <span>Buscando en catálogo global...</span>
+              </div>
+
+              <div id="reader" class="rounded overflow-hidden border bg-dark mb-3" style="width: 100%; min-height: 250px;"></div>
+
+              <hr class="my-3">
+
+              <label for="posManualInput" class="form-label small fw-bold">
+                Ingreso manual (Código QR o Nombre)
+              </label>
+              <form id="posManualForm" class="input-group">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="posManualInput"
+                  list="posProductSuggestions"
+                  placeholder="Ej. PROD-1234 o nombre del producto"
+                  autocomplete="off"
+                >
+                <button type="submit" class="btn btn-success" id="btnPosManualAdd">
+                  <i class="bi bi-plus-circle me-1"></i> Agregar
+                </button>
+              </form>
+              <datalist id="posProductSuggestions"></datalist>
+              <div class="form-text small">
+                Respaldo sin cámara y compatible con lector USB/Bluetooth.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLOQUE DERECHO: CARRITO FÍSICO Y COBRO -->
+        <div class="col-lg-7">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0"><i class="bi bi-cart-check me-2 text-success"></i>Carrito Físico</h6>
+                <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3" id="btnPosClearCart">
+                  <i class="bi bi-trash me-1"></i> Vaciar
+                </button>
+              </div>
+
+              <div class="table-responsive flex-grow-1 mb-3">
+                <table class="table table-hover align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Producto</th>
+                      <th>Precio</th>
+                      <th class="text-center">Cantidad</th>
+                      <th class="text-end">Subtotal</th>
+                      <th class="text-center">Eliminar</th>
+                    </tr>
+                  </thead>
+                  <tbody id="posCartBody">
+                    <tr>
+                      <td colspan="5" class="text-center text-muted py-5">
+                        Escanea un producto o agrégalo manualmente para iniciar la venta.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="border-top pt-3 mt-auto">
+                <div class="row g-3 align-items-center mb-3">
+                  <div class="col-sm-6">
+                    <label for="posMetodoPago" class="form-label small fw-bold mb-1">Método de Pago</label>
+                    <select class="form-select" id="posMetodoPago">
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Yape / Plin">Yape / Plin</option>
+                      <option value="Tarjeta">Tarjeta</option>
+                    </select>
+                  </div>
+                  <div class="col-sm-6 text-sm-end">
+                    <div class="small text-muted fw-bold text-uppercase">Total a Pagar</div>
+                    <div class="display-6 fw-bold text-success mb-0" id="posTotal">S/ 0.00</div>
+                  </div>
+                </div>
+
+                <button type="button" class="btn btn-success btn-lg w-100 fw-bold" id="btnPosCheckout" disabled>
+                  <i class="bi bi-cash-coin me-2"></i>Cobrar y Registrar Venta
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PESTAÑA EXTRA: VENTA RÁPIDA (EXPRESS TÁCTIL) -->
+    <div id="tabVentaExpress" class="d-none">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="fw-bold mb-0"><i class="bi bi-lightning-charge-fill text-warning me-2"></i>Venta Rápida (Express)</h4>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2" id="expressItemsBadge">0 u. en carrito</span>
+          <button type="button" class="btn btn-sm btn-outline-dark rounded-pill px-3" id="btnRecargarExpress">
+            <i class="bi bi-arrow-clockwise me-1"></i> Actualizar stock
+          </button>
+        </div>
+      </div>
+
+      <div class="row g-3 g-lg-4">
+        <!-- BLOQUE TÁCTIL DE PRODUCTOS -->
+        <div class="col-lg-7">
+          <input type="search" id="buscadorExpress" class="form-control form-control-lg mb-3" placeholder="Buscar producto rápido...">
+          <div id="gridProductosExpress" class="row g-2 row-cols-2 row-cols-sm-3 row-cols-md-4"></div>
+        </div>
+
+        <!-- BLOQUE DE CARRITO EDITABLE Y COBRO EN 1 TOQUE -->
+        <div class="col-lg-5">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0"><i class="bi bi-cart-check me-2 text-success"></i>Carrito Express</h6>
+                <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3" id="btnVaciarExpress">
+                  <i class="bi bi-trash me-1"></i>Vaciar
+                </button>
+              </div>
+
+              <div id="carritoExpressContainer" class="mb-3"></div>
+
+              <div class="bg-light border rounded-3 p-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="small fw-bold text-uppercase text-muted">Total a Pagar</span>
+                  <span class="badge bg-white text-muted border small">Editable</span>
+                </div>
+                <div class="d-flex align-items-baseline justify-content-end gap-2 mt-1">
+                  <span class="display-5 fw-bold text-success">S/</span>
+                  <input
+                    type="number"
+                    step="0.10"
+                    min="0"
+                    inputmode="decimal"
+                    onfocus="this.select()"
+                    id="totalExpressInput"
+                    class="form-control border-0 bg-transparent text-end display-5 fw-bold text-success p-0 total-express-input"
+                    style="max-width: 240px; box-shadow: none;"
+                    value="0.00"
+                    aria-label="Total a pagar en Venta Rápida"
+                    disabled
+                  >
+                </div>
+                <div class="text-end small text-muted mt-1">Toca el total para redondear o aplicar descuento global</div>
+              </div>
+
+              <div class="d-grid gap-2">
+                <button type="button" id="btnCobrarExpressEfectivo" class="btn btn-success btn-lg py-3 fw-bold btn-express-cobro" disabled>
+                  <i class="bi bi-cash-stack me-2"></i>COBRAR EFECTIVO
+                </button>
+                <button type="button" id="btnCobrarExpressYape" class="btn btn-yape-express btn-lg py-3 fw-bold btn-express-cobro" disabled>
+                  <i class="bi bi-phone-fill me-2"></i>COBRAR YAPE / DIGITAL
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PESTAÑA 5: MI UBICACIÓN -->
+    <div id="tabUbicacion" class="d-none">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-geo-alt-fill text-danger me-2"></i>Mi Ubicación y Mapa</h4>
+        <span class="badge bg-light text-dark border rounded-pill px-3 py-2">
+          <i class="bi bi-globe me-1 text-primary"></i> Visible en tu tienda pública
+        </span>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-lg-6">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <h6 class="fw-bold mb-3">Configurar Dirección y Google Maps</h6>
+              <form id="formMiUbicacion">
+                <div class="mb-3">
+                  <label for="ubicacionDireccion" class="form-label small fw-bold">Dirección Física</label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="ubicacionDireccion"
+                    maxlength="240"
+                    placeholder="Ej. Av. Larco 345, Miraflores, Lima"
+                  >
+                </div>
+
+                <div class="mb-3">
+                  <label for="ubicacionMapsUrl" class="form-label small fw-bold">Enlace o Código Insertar de Google Maps</label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="ubicacionMapsUrl"
+                    maxlength="1200"
+                    placeholder="https://maps.app.goo.gl/... o https://www.google.com/maps/embed?..."
+                  >
+                  <div class="form-text small">
+                    Usa Google Maps &gt; Compartir &gt; Copiar enlace (botón) o "Insertar un mapa" (pega la URL o el código &lt;iframe&gt; completo).
+                  </div>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                  <button type="submit" class="btn btn-success fw-bold px-4" id="btnGuardarUbicacion">
+                    <i class="bi bi-check2-circle me-1"></i> Guardar Ubicación
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="btnLimpiarUbicacion">
+                    Solo delivery online
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-6">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0"><i class="bi bi-eye me-1 text-primary"></i> Vista Previa en Tienda</h6>
+                <span class="badge bg-secondary-subtle text-dark" id="ubicacionPreviewBadge">Sin configurar</span>
+              </div>
+              <div id="ubicacionPreview"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL: PRODUCTO -->
+<div class="modal fade" id="productModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title" id="modalTitle">Nuevo Producto</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="productForm">
+          <input type="hidden" id="pId">
+          <input type="hidden" id="pImagenUrlExterna">
+          <div class="mb-3"><label class="form-label small fw-bold">Nombre</label><input type="text" class="form-control" id="pNombre" required></div>
+          <div class="mb-3"><label class="form-label small fw-bold">Descripción</label><input type="text" class="form-control" id="pDesc"></div>
+          <div class="row">
+            <div class="col-6 mb-3"><label class="form-label small fw-bold">Precio (S/)</label><input type="number" step="0.1" min="0" class="form-control" id="pPrecio" required></div>
+            <div class="col-6 mb-3"><label class="form-label small fw-bold">Categoría</label><select class="form-select" id="pCat" required></select></div>
+          </div>
+          <div class="alert alert-light border small py-2 mb-3 text-muted" id="pStockInfo">
+            <i class="bi bi-info-circle me-1"></i>El producto se creará con stock 0. Luego podrás ingresar lotes desde el botón <strong>Lotes / Ingreso</strong>.
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Código QR / Barras (Opcional)</label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="pCodigoQR" placeholder="Ej. PROD-4821">
+              <button type="button" class="btn btn-outline-secondary" id="btnGenerarQR" title="Autogenerar código único">
+                <i class="bi bi-magic me-1"></i> Generar
+              </button>
+            </div>
+            <div class="form-text small">Permite escanear el producto desde la pestaña POS Físico.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Foto (Opcional)</label>
+            <input type="file" class="form-control" id="pImagen" accept="image/*">
+            <img id="pPreview" class="mt-2 rounded shadow-sm" style="max-height: 100px; display: none;">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-primary" id="btnSaveProduct">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ACEPTAR PEDIDO -->
+<div class="modal fade" id="acceptOrderModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white py-2">
+        <h6 class="modal-title fw-bold mb-0" id="acceptOrderTitle">Aceptar Pedido</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="acceptOrderId">
+        <label for="acceptOrderMinutes" class="form-label small fw-bold">Tiempo estimado de entrega</label>
+        <select id="acceptOrderMinutes" class="form-select">
+          <option value="15">15 min</option>
+          <option value="20">20 min</option>
+          <option value="30" selected>30 min</option>
+          <option value="45">45 min</option>
+          <option value="60">60 min</option>
+          <option value="90">90 min</option>
+        </select>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-sm btn-success" id="btnConfirmAcceptOrder">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CONFIRMACIÓN CATÁLOGO GLOBAL POS -->
+<div class="modal fade" id="posGlobalLookupModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white py-2">
+        <h6 class="modal-title fw-bold mb-0" id="posLookupModalTitle">
+          <i class="bi bi-upc-scan me-2"></i>Producto no registrado
+        </h6>
+        <button type="button" class="btn-close btn-close-white" id="btnPosLookupClose" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex align-items-center gap-3">
+          <img id="posLookupImg" src="" alt="Vista previa del producto" class="rounded border shadow-sm d-none" style="width: 72px; height: 72px; object-fit: contain; background: #fff;">
+          <div>
+            <p class="mb-1" id="posLookupMessage"></p>
+            <small class="text-muted" id="posLookupCodeBadge"></small>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" id="btnPosLookupCancel">Cancelar</button>
+        <button type="button" class="btn btn-sm btn-success fw-bold" id="btnPosLookupConfirm">Agregar a inventario</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: GESTIÓN DE LOTES (ERP FEFO / FIFO) -->
+<div class="modal fade" id="modalLotesProducto" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <div>
+          <h5 class="modal-title mb-0"><i class="bi bi-boxes me-2"></i>Gestión de Lotes</h5>
+          <small class="text-light opacity-75" id="lotesProductoNombre"></small>
+        </div>
+        <div class="d-flex align-items-center gap-2 ms-auto">
+          <span class="badge bg-success fs-6" id="lotesStockTotal">Stock: 0 u.</span>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <!-- FORMULARIO SUPERIOR: INGRESAR NUEVO LOTE -->
+        <form id="formNuevoLote" class="border rounded-3 p-3 bg-light mb-4">
+          <input type="hidden" id="loteProductoId">
+          <h6 class="fw-bold mb-3 text-success"><i class="bi bi-plus-circle me-1"></i>Ingresar Nuevo Lote</h6>
+          <div class="row g-3">
+            <div class="col-6 col-md-3">
+              <label for="loteCantidad" class="form-label small fw-bold">Cantidad ingresada *</label>
+              <input type="number" class="form-control" id="loteCantidad" min="1" step="1" placeholder="Ej. 24" required>
+            </div>
+            <div class="col-6 col-md-3">
+              <label for="loteCostoUnitario" class="form-label small fw-bold">Costo unitario (S/)</label>
+              <input type="number" class="form-control" id="loteCostoUnitario" min="0" step="0.01" value="0.00" required>
+            </div>
+            <div class="col-6 col-md-3">
+              <label for="loteCodigo" class="form-label small fw-bold">Código de lote</label>
+              <input type="text" class="form-control" id="loteCodigo" placeholder="Ej. LOTE-2026-01">
+            </div>
+            <div class="col-6 col-md-3">
+              <label for="loteFechaVencimiento" class="form-label small fw-bold">Fecha de vencimiento</label>
+              <input type="date" class="form-control" id="loteFechaVencimiento">
+              <div class="form-text small">Dejar vacío si no vence</div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-end mt-3">
+            <button type="submit" class="btn btn-success fw-bold" id="btnGuardarLote">
+              <i class="bi bi-save me-1"></i> Guardar Lote
+            </button>
+          </div>
+        </form>
+
+        <!-- TABLA INFERIOR: HISTORIAL DE LOTES ACTIVOS -->
+        <h6 class="fw-bold mb-2"><i class="bi bi-clock-history me-1"></i>Historial de Lotes (Orden FEFO)</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Código / Ingreso</th>
+                <th>Stock</th>
+                <th>Costo Unit.</th>
+                <th>Vencimiento</th>
+                <th>Estado</th>
+                <th class="text-center">Baja</th>
+              </tr>
+            </thead>
+            <tbody id="tablaLotesBody">
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">Cargando lotes...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index: 2000;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="js/config.js"></script>
+<script src="js/admin.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+      .catch(() => {});
+  }
+</script>
+</body>
+</html>

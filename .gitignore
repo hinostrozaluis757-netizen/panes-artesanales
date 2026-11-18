@@ -1,0 +1,12 @@
+# Dependencias y archivos temporales de CLI
+node_modules/
+supabase/.temp/
+
+# Secretos y variables de entorno
+.env
+.env.*
+*.pem
+*.key
+
+# Respaldos locales de inquilinos con datos de clientes
+respaldo_*.json

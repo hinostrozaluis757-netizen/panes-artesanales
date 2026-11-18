@@ -1,0 +1,196 @@
+/* Fuentes y Reset */
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: #f0f2f5; /* Fondo gris azulado muy suave */
+  color: #333;
+}
+
+/* LOGIN (Más elegante) */
+.login-view {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #12352A 0%, #1B4D3E 100%);
+  padding: 20px;
+}
+.login-card {
+  background: white;
+  border-radius: 24px;
+  padding: 40px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.logo-circle {
+  width: 80px;
+  height: 80px;
+  background: #F6F0E2;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1B4D3E;
+  box-shadow: 0 8px 20px rgba(27, 77, 62, 0.15);
+}
+
+/* NAVBAR (Estilo cristal) */
+.admin-navbar {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding: 15px 0;
+}
+.nav-pills .nav-link {
+  color: #555;
+  font-weight: 600;
+  border-radius: 50px;
+  padding: 8px 20px;
+  transition: all 0.3s;
+}
+.nav-pills .nav-link.active {
+  background-color: #1B4D3E !important;
+  color: white !important;
+  box-shadow: 0 4px 12px rgba(27, 77, 62, 0.3);
+}
+
+/* KPI CARDS (Con vida) */
+.kpi-card {
+  border-radius: 20px;
+  padding: 24px;
+  color: white;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+.kpi-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+}
+.kpi-card::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 120px;
+  height: 120px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 50%;
+}
+.kpi-green  { background: linear-gradient(135deg, #1B4D3E, #2b6b56); }
+.kpi-orange { background: linear-gradient(135deg, #D9822B, #b86b1f); }
+.kpi-blue   { background: linear-gradient(135deg, #1565C0, #0d47a1); }
+.kpi-purple { background: linear-gradient(135deg, #6A1B9A, #4A148C); }
+
+.kpi-icon { font-size: 1.8rem; opacity: 0.9; margin-bottom: 12px; }
+.kpi-label {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.kpi-value { font-size: 1.8rem; font-weight: 800; margin-top: 4px; }
+
+/* TARJETAS Y TABLAS */
+.card {
+  border-radius: 20px !important;
+  border: 1px solid rgba(0,0,0,0.03) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.04) !important;
+}
+.card-header {
+  background: white !important;
+  border-bottom: 1px solid #eee !important;
+  border-radius: 20px 20px 0 0 !important;
+  padding: 20px 24px !important;
+}
+.table-responsive {
+  border-radius: 12px;
+}
+.table th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  font-weight: 700;
+  border-bottom: 2px solid #f0f0f0;
+  padding: 15px;
+}
+.table td {
+  font-size: 0.95rem;
+  padding: 15px;
+  vertical-align: middle;
+  border-bottom: 1px solid #f9f9f9;
+}
+.table-hover tbody tr:hover {
+  background-color: #f8fbff !important;
+  transition: background-color 0.2s;
+}
+.badge-estado {
+  font-size: 0.75rem;
+  padding: 6px 12px;
+  border-radius: 50px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+}
+.estado-pendiente { background: #FFF3CD; color: #856404; }
+.estado-pagado    { background: #D4EDDA; color: #155724; }
+.estado-entregado { background: #D1ECF1; color: #0C5460; }
+.estado-cancelado { background: #F8D7DA; color: #721C24; }
+
+/* BOTONES */
+.btn-success {
+  background: linear-gradient(135deg, #28a745, #1e7e34) !important;
+  border: none !important;
+  box-shadow: 0 4px 10px rgba(40, 167, 69, 0.3) !important;
+  border-radius: 50px !important;
+  padding: 8px 20px !important;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #007bff, #0056b3) !important;
+  border: none !important;
+  border-radius: 50px !important;
+  box-shadow: 0 4px 10px rgba(0, 123, 255, 0.3) !important;
+}
+
+/* TOP PRODUCTOS */
+.top-product-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px dashed #eee;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+.top-product-item:hover {
+  transform: translateX(5px);
+}
+.top-product-item:last-child { border-bottom: none; }
+.top-product-item .rank {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, #D9822B, #b86b1f);
+  color: white;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-right: 12px;
+  box-shadow: 0 2px 5px rgba(217, 130, 43, 0.3);
+}
+
+/* ANIMACIONES */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+#tabPedidos, #tabProductos, #tabProductos .card, .kpi-card {
+  animation: fadeIn 0.5s ease-in-out forwards;
+}

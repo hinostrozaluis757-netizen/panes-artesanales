@@ -1,0 +1,17 @@
+{
+  "id": "saas-admin-panel",
+  "name": "Panel Administrativo",
+  "short_name": "Admin",
+  "description": "Panel multi-tenant de gestión de ventas e inventario.",
+  "start_url": "./admin.html",
+  "display": "standalone",
+  "background_color": "#f5f6fa",
+  "theme_color": "#1B4D3E",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/921/921529.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
