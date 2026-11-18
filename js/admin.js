@@ -11,6 +11,7 @@ window.negocioAdminActual = null;
 let realtimeChannel = null;
 let authResolutionSeq = 0;
 let isSigningOut = false;
+let cuentaSuspendidaAdmin = false;
 
 const GIRO_CATEGORIAS_ADMIN = {
   panaderia: {
@@ -248,6 +249,17 @@ function resetearEstadoAdmin() {
   }
   realtimeChannel = null;
   window.negocioAdminActual = null;
+  cuentaSuspendidaAdmin = false;
+
+  const bannerSusp = $('#bannerSuspensionAdmin');
+  if (bannerSusp) bannerSusp.remove();
+
+  $$('[data-suspended-locked="1"]').forEach(el => {
+    el.disabled = false;
+    el.classList.remove('disabled');
+    el.removeAttribute('aria-disabled');
+    delete el.dataset.suspendedLocked;
+  });
 
   allOrders = [];
   allProducts = [];
@@ -465,10 +477,8 @@ async function resolverNegocioYIniciar() {
 
     const negocioElegido = negociosPropios.find(n => n.activo !== false) || negociosPropios[0];
     if (negocioElegido.activo === false) {
-      alert('⚠️ Este negocio se encuentra suspendido actualmente. Contacta al administrador.');
-      try { await supabaseClient.auth.signOut(); } catch (_) {}
-      resetearEstadoAdmin();
-      showLogin();
+      window.negocioAdminActual = negocioElegido;
+      await aplicarBloqueoSuspension(negocioElegido, user.email || '');
       return;
     }
 
@@ -483,6 +493,78 @@ async function resolverNegocioYIniciar() {
     alert('Ocurrió un error inesperado al resolver tu negocio.');
     showLogin();
   }
+}
+
+async function aplicarBloqueoSuspension(negocio, email = '') {
+  cuentaSuspendidaAdmin = true;
+
+  try { await detenerEscanerPOS(); } catch (_) {}
+  if (realtimeChannel && supabaseClient) {
+    try { supabaseClient.removeChannel(realtimeChannel); } catch (_) {}
+    realtimeChannel = null;
+  }
+
+  if ($('#loginView')) $('#loginView').classList.add('d-none');
+  if ($('#dashboardView')) $('#dashboardView').classList.remove('d-none');
+  if ($('#userEmail')) $('#userEmail').textContent = email;
+
+  actualizarIdentidadPanel();
+
+  let motivo = '';
+  if (supabaseClient && negocio && negocio.id) {
+    try {
+      const { data: gob } = await supabaseClient
+        .from('negocios_gobierno')
+        .select('motivo_suspension')
+        .eq('negocio_id', negocio.id)
+        .maybeSingle();
+      if (gob && gob.motivo_suspension) {
+        motivo = String(gob.motivo_suspension).trim();
+      }
+    } catch (_) {
+      // Ignorar si negocios_gobierno aún no existe o falla
+    }
+  }
+
+  const mainContainer = $('#dashboardView .container-fluid.py-4');
+  if (mainContainer) {
+    const prev = $('#bannerSuspensionAdmin');
+    if (prev) prev.remove();
+    const banner = document.createElement('div');
+    banner.id = 'bannerSuspensionAdmin';
+    banner.className = 'alert alert-danger border-0 shadow-sm d-flex align-items-start gap-3 mb-4';
+    banner.setAttribute('role', 'alert');
+    banner.innerHTML = `
+      <i class="bi bi-shield-lock-fill fs-3 text-danger"></i>
+      <div>
+        <h5 class="fw-bold mb-1">Tu cuenta está suspendida. Contacta al administrador de la plataforma.</h5>
+        ${motivo ? `<p class="mb-0 small"><strong>Motivo:</strong> ${esc(motivo)}</p>` : ''}
+      </div>
+    `;
+    mainContainer.prepend(banner);
+  }
+
+  $$('#adminTabs .nav-link').forEach(btn => {
+    btn.disabled = true;
+    btn.classList.add('disabled');
+    btn.setAttribute('aria-disabled', 'true');
+    btn.dataset.suspendedLocked = '1';
+  });
+
+  const btnTienda = $('#btnVerTienda');
+  if (btnTienda) {
+    btnTienda.href = '#';
+    btnTienda.classList.add('disabled');
+    btnTienda.setAttribute('aria-disabled', 'true');
+  }
+
+  $$('#dashboardView .container-fluid button, #dashboardView .container-fluid input, #dashboardView .container-fluid select').forEach(el => {
+    if (el.id === 'logoutBtn') return;
+    if (!el.disabled) {
+      el.disabled = true;
+      el.dataset.suspendedLocked = '1';
+    }
+  });
 }
 
 function showDashboard(email) {
@@ -632,6 +714,7 @@ $('#logoutBtn').addEventListener('click', async () => {
 // NAVEGACIÓN PESTAÑAS PRINCIPALES
 $$('#adminTabs .nav-link').forEach(btn => {
   btn.addEventListener('click', async () => {
+    if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false) return;
     const target = btn.dataset.target;
     if (!target) return;
     $$('#adminTabs .nav-link').forEach(b => b.classList.remove('active'));
@@ -665,6 +748,7 @@ $$('#adminTabs .nav-link').forEach(btn => {
 // PEDIDOS Y DASHBOARD (FILTRADOS POR negocio_id)
 // =============================================================================
 async function loadOrders() {
+  if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false) return;
   const negocioId = getNegocioActivoId();
   if (!negocioId || !supabaseClient) return;
 
@@ -850,6 +934,7 @@ $('#btnExportCSV').addEventListener('click', () => {
 // GESTIÓN DE PRODUCTOS (CRUD AISLADO POR negocio_id)
 // =============================================================================
 async function loadProducts() {
+  if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false) return;
   const negocioId = getNegocioActivoId();
   if (!negocioId || !supabaseClient) return;
 
@@ -2342,6 +2427,7 @@ if ($('#formNuevoLote')) {
 }
 
 async function cargarAlertasVencimiento() {
+  if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false) return;
   const negocioId = getNegocioActivoId();
   if (!negocioId || !supabaseClient) return;
   const listEl = $('#alertasVencimientoList');
@@ -2679,6 +2765,7 @@ function calcularTotalExpressCents() {
 }
 
 async function cargarProductosExpress() {
+  if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false) return;
   if (!supabaseClient) return;
   let tenantId;
   try {
