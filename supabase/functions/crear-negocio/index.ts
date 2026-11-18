@@ -1,5 +1,12 @@
 // ARCHIVO: supabase/functions/crear-negocio/index.ts
+// TODO: fijar versión exacta @supabase/supabase-js@2.x.y verificada contra esm.sh antes del despliegue
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const ALLOWED_ORIGINS = new Set([
+  'https://hinostrozaluis757-netizen.github.io',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+]);
 
 const PLANES_PERMITIDOS = new Set(['basico', 'pro', 'enterprise']);
 
@@ -19,17 +26,24 @@ const TIPOS_NEGOCIO_PERMITIDOS = new Set([
   'taller',
 ]);
 
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+function buildCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('Origin') || '';
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin',
+  };
+  if (ALLOWED_ORIGINS.has(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  return headers;
+}
 
-function jsonResponse(payload: unknown, status = 200): Response {
+function jsonResponse(req: Request, payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
-      ...corsHeaders,
+      ...buildCorsHeaders(req),
       'Content-Type': 'application/json',
     },
   });
@@ -61,11 +75,11 @@ function parseFechaIsoOpcional(raw: unknown): { valida: boolean; valor: string |
 Deno.serve(async (req: Request): Promise<Response> => {
   // 1. Manejo completo de preflight CORS
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { status: 200, headers: corsHeaders });
+    return new Response('ok', { status: 200, headers: buildCorsHeaders(req) });
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse({ error: 'Método no permitido. Usa POST.' }, 405);
+    return jsonResponse(req, { error: 'Método no permitido. Usa POST.' }, 405);
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -73,8 +87,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+    console.error('Faltan variables de entorno requeridas en crear-negocio.');
     return jsonResponse(
-      { error: 'Configuración incompleta del entorno en la Edge Function.' },
+      req,
+      { error: 'Configuración incompleta del servicio en el servidor.' },
       500
     );
   }
@@ -82,12 +98,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // 2. Verificación Zero-Trust del JWT del llamador
   const authHeader = req.headers.get('Authorization') || '';
   if (!authHeader.toLowerCase().startsWith('bearer ')) {
-    return jsonResponse({ error: 'No autorizado' }, 403);
+    return jsonResponse(req, { error: 'No autorizado.' }, 403);
   }
 
   const jwt = authHeader.slice(7).trim();
   if (!jwt) {
-    return jsonResponse({ error: 'No autorizado' }, 403);
+    return jsonResponse(req, { error: 'No autorizado.' }, 403);
   }
 
   const supabaseAuthClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -101,10 +117,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } = await supabaseAuthClient.auth.getUser(jwt);
 
   if (callerError || !caller?.id) {
-    return jsonResponse({ error: 'No autorizado' }, 403);
+    if (callerError) console.error('Error validando JWT en crear-negocio:', callerError);
+    return jsonResponse(req, { error: 'No autorizado.' }, 403);
   }
 
-  // 3. Cliente administrativo privilegiado (service_role) y autorización por tabla superadmins
+  // 3. Cliente service_role y verificación en tabla public.superadmins
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -117,57 +134,90 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .maybeSingle();
 
   if (superadminError || !superadminRow) {
-    return jsonResponse({ error: 'No autorizado' }, 403);
+    if (superadminError) console.error('Error verificando superadmins en crear-negocio:', superadminError);
+    return jsonResponse(req, { error: 'No autorizado.' }, 403);
   }
 
-  // 4. Parseo y validación de entrada
+  // 4. Parseo y validación estricta de entrada
   let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
-    return jsonResponse({ error: 'El cuerpo de la petición debe ser JSON válido.' }, 400);
+    return jsonResponse(req, { error: 'El cuerpo de la petición debe ser JSON válido.' }, 400);
   }
 
   const nombreNegocio = String(body?.nombre_negocio ?? '').trim();
   const slug = normalizarSlug(String(body?.slug ?? ''));
-  const rawTipo = String(body?.tipo_negocio ?? 'general').trim().toLowerCase();
-  const tipoNegocio = TIPOS_NEGOCIO_PERMITIDOS.has(rawTipo) ? rawTipo : 'general';
+  const rawTipo = body?.tipo_negocio === undefined || body?.tipo_negocio === null || String(body.tipo_negocio).trim() === ''
+    ? 'general'
+    : String(body.tipo_negocio).trim().toLowerCase();
   const rawPlan = body?.plan === undefined || body?.plan === null || String(body.plan).trim() === ''
     ? 'basico'
     : String(body.plan).trim().toLowerCase();
   const fechaVenc = parseFechaIsoOpcional(body?.fecha_vencimiento_plan);
-  const whatsappClean = String(body?.whatsapp ?? '').replace(/\D/g, '') || null;
+  const rawWhatsapp = String(body?.whatsapp ?? '').trim();
+  const whatsappDigits = rawWhatsapp.replace(/\D/g, '');
+  const whatsappClean = whatsappDigits ? whatsappDigits : null;
   const emailDueno = String(body?.email_dueno ?? '').trim().toLowerCase();
   const password = String(body?.password ?? '');
 
-  if (!nombreNegocio) {
-    return jsonResponse({ error: 'El nombre del negocio es obligatorio.' }, 400);
-  }
-
-  if (!slug) {
-    return jsonResponse({ error: 'El slug es obligatorio y debe contener letras o números.' }, 400);
-  }
-
-  if (!PLANES_PERMITIDOS.has(rawPlan)) {
-    return jsonResponse({ error: 'Plan inválido. Valores permitidos: basico, pro, enterprise.' }, 400);
-  }
-
-  if (!fechaVenc.valida) {
-    return jsonResponse({ error: 'La fecha de vencimiento del plan debe tener formato YYYY-MM-DD.' }, 400);
-  }
-
-  if (!emailDueno || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailDueno)) {
-    return jsonResponse({ error: 'Ingresa un correo electrónico válido para el dueño.' }, 400);
-  }
-
-  if (!password || password.length < 6) {
+  if (!nombreNegocio || nombreNegocio.length > 100) {
     return jsonResponse(
-      { error: 'La contraseña temporal debe tener al menos 6 caracteres.' },
+      req,
+      { error: 'El nombre del negocio es obligatorio y debe tener máximo 100 caracteres.' },
       400
     );
   }
 
-  // 5. Verificar unicidad de slug ANTES de tocar auth.users
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug) || slug.length < 3 || slug.length > 40) {
+    return jsonResponse(
+      req,
+      { error: 'El slug debe tener entre 3 y 40 caracteres (solo minúsculas, números y guiones internos).' },
+      400
+    );
+  }
+
+  if (!TIPOS_NEGOCIO_PERMITIDOS.has(rawTipo)) {
+    return jsonResponse(req, { error: 'El giro comercial indicado no es válido.' }, 400);
+  }
+
+  if (!PLANES_PERMITIDOS.has(rawPlan)) {
+    return jsonResponse(
+      req,
+      { error: 'Plan inválido. Valores permitidos: basico, pro, enterprise.' },
+      400
+    );
+  }
+
+  if (!fechaVenc.valida) {
+    return jsonResponse(
+      req,
+      { error: 'La fecha de vencimiento del plan debe tener formato YYYY-MM-DD válido.' },
+      400
+    );
+  }
+
+  if (whatsappClean !== null && !/^\d{9,15}$/.test(whatsappClean)) {
+    return jsonResponse(
+      req,
+      { error: 'El WhatsApp debe contener entre 9 y 15 dígitos o dejarse vacío.' },
+      400
+    );
+  }
+
+  if (!emailDueno || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailDueno)) {
+    return jsonResponse(req, { error: 'Ingresa un correo electrónico válido para el dueño.' }, 400);
+  }
+
+  if (password.length < 12 || password.length > 72) {
+    return jsonResponse(
+      req,
+      { error: 'La contraseña temporal debe tener entre 12 y 72 caracteres.' },
+      400
+    );
+  }
+
+  // 5. Verificar unicidad de slug ANTES de crear usuario en Auth
   const { data: slugExistente, error: slugCheckError } = await supabaseAdmin
     .from('negocios')
     .select('id')
@@ -175,34 +225,35 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .maybeSingle();
 
   if (slugCheckError) {
-    return jsonResponse(
-      { error: `Error al validar el slug: ${slugCheckError.message}` },
-      500
-    );
+    console.error('Error comprobando unicidad de slug en crear-negocio:', slugCheckError);
+    return jsonResponse(req, { error: 'No se pudo validar la disponibilidad del slug.' }, 500);
   }
 
   if (slugExistente) {
     return jsonResponse(
+      req,
       { error: `El slug "${slug}" ya existe. Elige un identificador diferente.` },
       400
     );
   }
 
-  // 6. Crear usuario dueño en Supabase Auth (confirmado automáticamente)
+  // 6. Crear usuario dueño en Supabase Auth (sin user_metadata.rol)
   const { data: userData, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
     email: emailDueno,
     password,
     email_confirm: true,
-    user_metadata: {
-      rol: 'owner',
-      negocio_slug: slug,
-    },
   });
 
   if (createUserError || !userData?.user?.id) {
+    console.error('Error creando usuario en Auth:', createUserError);
+    const msgAuth = String(createUserError?.message || '').toLowerCase();
+    const yaExiste = msgAuth.includes('already') || msgAuth.includes('registered') || msgAuth.includes('exists');
     return jsonResponse(
+      req,
       {
-        error: createUserError?.message || 'No se pudo crear la cuenta del dueño en Auth.',
+        error: yaExiste
+          ? 'Ya existe una cuenta registrada con ese correo electrónico.'
+          : 'No se pudo crear la cuenta del dueño en el sistema de autenticación.',
       },
       400
     );
@@ -210,16 +261,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const ownerId = userData.user.id;
 
-  // 7. Insertar negocio en 'negocios' con rollback obligatorio si falla
+  // 7. Insertar en public.negocios con rollback obligatorio si falla
   const { data: negocioCreado, error: insertNegocioError } = await supabaseAdmin
     .from('negocios')
     .insert({
       nombre: nombreNegocio,
       slug,
       whatsapp: whatsappClean,
-      tipo_negocio: tipoNegocio,
-      plan: rawPlan,
-      fecha_vencimiento_plan: fechaVenc.valor,
+      tipo_negocio: rawTipo,
       owner_id: ownerId,
       activo: true,
     })
@@ -227,22 +276,57 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .single();
 
   if (insertNegocioError || !negocioCreado) {
-    const { error: rollbackError } = await supabaseAdmin.auth.admin.deleteUser(ownerId);
-    const detalleError = insertNegocioError?.message || 'Error desconocido al insertar en negocios.';
+    console.error('Error insertando en public.negocios:', insertNegocioError);
+    const { error: rollbackUserErr } = await supabaseAdmin.auth.admin.deleteUser(ownerId);
+    if (rollbackUserErr) {
+      console.error('Error revirtiendo usuario Auth tras fallo en negocios:', rollbackUserErr);
+    }
 
+    const esDuplicado = insertNegocioError?.code === '23505';
     return jsonResponse(
+      req,
       {
-        error: `No se pudo registrar el negocio: ${detalleError}`,
-        detail: detalleError,
-        rollback_executed: true,
-        rollback_ok: !rollbackError,
-        rollback_error: rollbackError?.message ?? null,
+        error: esDuplicado
+          ? `El slug "${slug}" ya fue ocupado. Intenta con otro identificador.`
+          : 'No se pudo registrar el negocio en la base de datos. Se revirtió la cuenta creada.',
       },
-      insertNegocioError?.code === '23505' ? 400 : 500
+      esDuplicado ? 400 : 500
     );
   }
 
-  // 8. Registrar evento inmutable en bitácora de auditoría
+  // 8. Insertar fila comercial en public.negocios_gobierno con rollback total si falla
+  const { data: gobiernoCreado, error: insertGobiernoError } = await supabaseAdmin
+    .from('negocios_gobierno')
+    .insert({
+      negocio_id: negocioCreado.id,
+      plan: rawPlan,
+      fecha_vencimiento_plan: fechaVenc.valor,
+    })
+    .select()
+    .single();
+
+  if (insertGobiernoError || !gobiernoCreado) {
+    console.error('Error insertando en public.negocios_gobierno:', insertGobiernoError);
+    const { error: rollbackNegErr } = await supabaseAdmin
+      .from('negocios')
+      .delete()
+      .eq('id', negocioCreado.id);
+    if (rollbackNegErr) {
+      console.error('Error revirtiendo negocio tras fallo en negocios_gobierno:', rollbackNegErr);
+    }
+    const { error: rollbackUserErr } = await supabaseAdmin.auth.admin.deleteUser(ownerId);
+    if (rollbackUserErr) {
+      console.error('Error revirtiendo usuario Auth tras fallo en negocios_gobierno:', rollbackUserErr);
+    }
+
+    return jsonResponse(
+      req,
+      { error: 'No se pudo registrar la configuración comercial del negocio. Se revirtió la operación.' },
+      500
+    );
+  }
+
+  // 9. Registrar evento CREAR_NEGOCIO en logs_auditoria (sin abortar el alta si falla el log)
   const { error: auditError } = await supabaseAdmin
     .from('logs_auditoria')
     .insert({
@@ -255,21 +339,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
         nombre: negocioCreado.nombre,
         slug: negocioCreado.slug,
         tipo_negocio: negocioCreado.tipo_negocio,
-        plan: negocioCreado.plan,
-        fecha_vencimiento_plan: negocioCreado.fecha_vencimiento_plan,
+        plan: gobiernoCreado.plan,
+        fecha_vencimiento_plan: gobiernoCreado.fecha_vencimiento_plan,
         owner_id: ownerId,
         owner_email: emailDueno,
       },
     });
 
   if (auditError) {
-    console.error('Advertencia registrando auditoría CREAR_NEGOCIO:', auditError);
+    console.error('Error registrando auditoría CREAR_NEGOCIO:', auditError);
   }
 
-  // 9. Éxito (201 Created)
+  // 10. Éxito (201 Created)
   return jsonResponse(
+    req,
     {
       negocio: negocioCreado,
+      gobierno: gobiernoCreado,
       owner: {
         id: ownerId,
         email: userData.user.email,
