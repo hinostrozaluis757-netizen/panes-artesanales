@@ -507,30 +507,79 @@ function formatPhone(num) {
 // =============================================================================
 // RESOLUCIÓN DE INQUILINO (TENANT RESOLVER) POR URL
 // =============================================================================
+const TIMEOUT_CARGA_NEGOCIO_MS = 12000;
+let pantallaErrorMostrada = false;
+
 async function initTenant() {
   const params = new URLSearchParams(window.location.search);
   const slugActual = (params.get('tienda') || 'don-roberto').trim().toLowerCase();
 
   if (!supabaseClient) {
-    console.error("Cliente de Supabase no disponible.");
+    console.error('Cliente de Supabase no disponible.');
+    mostrarTiendaNoDisponible(slugActual, 'conexion');
     return;
   }
 
-  try {
-    const { data: negocio, error } = await supabaseClient
-      .from('negocios')
-      .select('id, nombre, slug, whatsapp, logo_url, tipo_negocio, direccion, google_maps_url, hero_imagen_url, hero_titulo_custom, color_primario, color_secundario, activo')
-      .eq('slug', slugActual)
-      .eq('activo', true)
-      .maybeSingle();
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timeoutId = null;
+  let cargaNegocioResuelta = false;
+  const sentinelTimeout = { __timeout: true };
 
-    if (error || !negocio) {
-      console.warn(`Tienda no disponible o inactiva para el slug: "${slugActual}"`, error);
+  let consulta = supabaseClient
+    .from('negocios')
+    .select('id, nombre, slug, whatsapp, logo_url, tipo_negocio, direccion, google_maps_url, hero_imagen_url, hero_titulo_custom, color_primario, color_secundario, activo')
+    .eq('slug', slugActual)
+    .eq('activo', true);
+
+  if (controller && typeof consulta.abortSignal === 'function') {
+    consulta = consulta.abortSignal(controller.signal);
+  }
+
+  const consultaPromise = Promise.resolve(consulta.maybeSingle());
+  const timeoutPromise = new Promise((resolve) => {
+    timeoutId = setTimeout(() => {
+      if (cargaNegocioResuelta || pantallaErrorMostrada) return;
+      resolve(sentinelTimeout);
+      if (controller) controller.abort();
+    }, TIMEOUT_CARGA_NEGOCIO_MS);
+  });
+
+  try {
+    const resultado = await Promise.race([consultaPromise, timeoutPromise]);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+
+    if (pantallaErrorMostrada) return;
+
+    // Caso 1a: Tiempo máximo de espera (12 s) agotado -> fallo de conexión
+    if (resultado && resultado.__timeout) {
+      consultaPromise.catch(() => {});
+      cargaNegocioResuelta = true;
+      console.error('Tiempo de espera agotado (12 s) al cargar la tienda.');
+      mostrarTiendaNoDisponible(slugActual, 'conexion');
+      return;
+    }
+
+    cargaNegocioResuelta = true;
+    const { data: negocio, error } = resultado || {};
+
+    // Caso 1b: Error de red o de la API -> fallo de conexión
+    if (error) {
+      console.error('Error de conexión o API al cargar la tienda:', error);
+      mostrarTiendaNoDisponible(slugActual, 'conexion');
+      return;
+    }
+
+    // Caso 2: Respuesta correcta sin filas (tienda inexistente o inactiva por RLS)
+    if (!negocio) {
+      console.warn('Tienda no disponible o inactiva.');
       mostrarTiendaNoDisponible(slugActual);
       return;
     }
 
-    // Almacenar en estado global
+    // Caso 3: Tienda activa cargada correctamente
     window.negocioActual = negocio;
 
     // Hidratar plantilla visual, colores, hero y categorías iniciales antes de renderizar catálogo
@@ -538,18 +587,51 @@ async function initTenant() {
 
     // Cargar carrito específico para esta tienda
     loadCart();
-
-    // Cargar catálogo de productos filtrado por negocio_id
-    await loadProducts();
   } catch (err) {
-    console.error("Error al inicializar la tienda:", err);
-    mostrarTiendaNoDisponible(slugActual);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    cargaNegocioResuelta = true;
+    if (pantallaErrorMostrada) return;
+    // Caso 1c: Promesa rechazada por fallo de red o cliente
+    console.error('Error al inicializar la tienda:', err);
+    mostrarTiendaNoDisponible(slugActual, 'conexion');
+    return;
+  }
+
+  // Cargar catálogo de productos filtrado por negocio_id
+  try {
+    await loadProducts();
+  } catch (prodErr) {
+    console.error('Error al cargar productos del negocio:', prodErr);
+    showToast('Error cargando el catálogo', 'danger');
   }
 }
 
-function mostrarTiendaNoDisponible(slug) {
+function mostrarTiendaNoDisponible(slug, motivo = 'no-disponible') {
+  if (pantallaErrorMostrada) return;
+  pantallaErrorMostrada = true;
+
   aplicarTemaVisual(PLANTILLAS_GIRO.general);
-  document.title = 'Tienda no disponible';
+
+  const esConexion = motivo === 'conexion';
+  const titulo = esConexion ? 'No pudimos cargar la tienda' : 'Tienda no disponible';
+  const tituloDocumento = esConexion ? 'No se pudo cargar la tienda' : 'Tienda no disponible';
+  const mensaje = esConexion
+    ? 'Revisa tu conexión a internet e inténtalo de nuevo.'
+    : 'El enlace que abriste no corresponde a una tienda activa. Puede que la dirección esté mal escrita o que la tienda esté temporalmente fuera de servicio.';
+  const textoBoton = esConexion ? 'Reintentar' : 'Intentar de nuevo';
+  const icono = esConexion ? '📡' : '🏪';
+
+  document.title = tituloDocumento;
+
+  if (document.head && !document.querySelector('meta[name="robots"]')) {
+    const metaRobots = document.createElement('meta');
+    metaRobots.setAttribute('name', 'robots');
+    metaRobots.setAttribute('content', 'noindex');
+    document.head.appendChild(metaRobots);
+  }
 
   // Ocultar catálogo, hero, locales y delivery para prevenir errores de referencia nula
   ['#carta', '#locales', '#delivery'].forEach(sel => {
@@ -560,22 +642,45 @@ function mostrarTiendaNoDisponible(slug) {
   const heroSection = $('#inicio');
   if (heroSection) heroSection.classList.add('d-none');
 
-  // Insertar contenedor con mensaje amigable
+  const existente = $('#tiendaNoDisponibleBanner');
+  if (existente) existente.remove();
+
+  // Insertar contenedor neutral accesible sin exponer slug ni detalles técnicos
   const alertDiv = document.createElement('div');
   alertDiv.id = 'tiendaNoDisponibleBanner';
   alertDiv.className = 'container my-5 py-5 text-center';
+  alertDiv.setAttribute('role', 'alert');
   alertDiv.innerHTML = `
     <div class="card shadow-sm border-0 p-5 mx-auto" style="max-width: 540px; border-radius: 16px; background-color: #ffffff;">
-      <div class="mb-3" style="font-size: 3.5rem;">🏪</div>
-      <h2 class="fw-bold mb-2" style="color: var(--verde-bosque);">Tienda no disponible</h2>
-      <p class="text-muted mb-4">La tienda <strong>"${escHtml(slug)}"</strong> no existe o se encuentra inactiva temporalmente.</p>
+      <div class="mb-3" id="tiendaEstadoIcono" style="font-size: 3.5rem;" aria-hidden="true"></div>
+      <h2 class="fw-bold mb-2" id="tiendaEstadoTitulo" style="color: var(--verde-bosque);"></h2>
+      <p class="text-muted mb-4" id="tiendaEstadoMensaje"></p>
       <div class="d-flex justify-content-center">
-        <a href="index.html?tienda=don-roberto" class="btn btn-whatsapp-nav px-4 py-2">
-          <i class="bi bi-arrow-left-circle me-1"></i> Ir a Don Roberto
-        </a>
+        <button type="button" id="btnReintentarTienda" class="btn btn-whatsapp-nav px-4 py-2">
+          <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i> <span id="btnReintentarTiendaTexto"></span>
+        </button>
       </div>
+      <p class="text-muted small mt-3 mb-0 d-none" id="tiendaEstadoNota"></p>
     </div>
   `;
+
+  $('#tiendaEstadoIcono', alertDiv).textContent = icono;
+  $('#tiendaEstadoTitulo', alertDiv).textContent = titulo;
+  $('#tiendaEstadoMensaje', alertDiv).textContent = mensaje;
+  $('#btnReintentarTiendaTexto', alertDiv).textContent = textoBoton;
+
+  if (!esConexion) {
+    const notaEl = $('#tiendaEstadoNota', alertDiv);
+    notaEl.textContent = 'Si el problema continúa, contacta al negocio que te compartió el enlace.';
+    notaEl.classList.remove('d-none');
+  }
+
+  const btnReintentar = $('#btnReintentarTienda', alertDiv);
+  if (btnReintentar) {
+    btnReintentar.addEventListener('click', () => {
+      window.location.reload();
+    });
+  }
 
   const mainNav = $('nav.navbar');
   if (mainNav && mainNav.parentNode) {
@@ -897,9 +1002,10 @@ function hidratarDOM(negocio) {
 
   if (negocio.slug === 'don-roberto') {
     if ($('#topBarLeft')) {
+      const nombreSeguro = escHtml((negocio && negocio.nombre) || 'Catálogo Digital');
       $('#topBarLeft').innerHTML = String(negocio.direccion || '').trim()
         ? `<i class="bi bi-geo-alt-fill text-warning me-1"></i> ${escHtml(negocio.direccion.trim())}`
-        : '<i class="bi bi-award-fill text-warning me-1"></i> <strong>Don Roberto</strong> · Productos Artesanales y Pedidos Online';
+        : `<i class="bi bi-award-fill text-warning me-1"></i> <strong>${nombreSeguro}</strong> · Productos Artesanales y Pedidos Online`;
     }
     if ($('#topBarRight')) {
       $('#topBarRight').innerHTML = '<span class="me-3"><i class="bi bi-star-fill text-warning me-1"></i> Calidad artesanal todos los días</span><span><i class="bi bi-envelope-fill text-warning me-1"></i> panes.donroberto@gmail.com</span>';
