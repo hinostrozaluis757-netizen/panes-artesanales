@@ -380,13 +380,22 @@ PLANTILLAS_GIRO.taller = crearPlantillaDesdeBaseGeneral({
   }
 });
 
-const PAYMENT_INFO = {
-  yape: { label: 'Yape', phone: '926 549 398', titular: 'Roberto Panes', qr: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=YAPE-926549398' },
-  plin: { label: 'Plin', phone: '926 549 398', titular: 'Roberto Panes' },
-  bcp: { label: 'Transferencia BCP', banco: 'BCP', cuenta: '193-2345678-0-12', cci: '002-193-002345678012-15', titular: 'Roberto Panes SAC', color: '#FF6B00' },
-  bbva: { label: 'BBVA Continental', banco: 'BBVA', cuenta: '0011-0234-0100456789', cci: '011-234-000100456789-12', titular: 'Roberto Panes SAC', color: '#004481' },
-  contraentrega: { label: 'Contra entrega', nota: 'Pagas en efectivo al recibir tu pedido.' }
+const METODOS_PAGO_LABELS = {
+  yape: 'Yape',
+  plin: 'Plin',
+  bcp: 'Transferencia BCP',
+  bbva: 'BBVA Continental',
+  contraentrega: 'Contra entrega'
 };
+const METODOS_PAGO_DIGITALES = ['yape', 'plin', 'bcp', 'bbva'];
+const TIMEOUT_PAGOS_MS = 10000;
+
+const pagosNegocioCache = new Map();
+let pagosNegocioCacheOwnerId = null;
+let pagosCargaSeq = 0;
+let pagosCargaPromesaActual = null;
+let estadoPagosActual = 'idle'; // 'idle' | 'cargando' | 'listo' | 'error'
+let datosPagosActual = null;
 
 let cart = [];
 let selectedPayment = null;
@@ -580,6 +589,14 @@ async function initTenant() {
     }
 
     // Caso 3: Tienda activa cargada correctamente
+    if (pagosNegocioCacheOwnerId && String(pagosNegocioCacheOwnerId) !== String(negocio.id)) {
+      pagosNegocioCache.clear();
+      pagosCargaPromesaActual = null;
+      estadoPagosActual = 'idle';
+      datosPagosActual = null;
+      pagosCargaSeq++;
+    }
+    pagosNegocioCacheOwnerId = String(negocio.id);
     window.negocioActual = negocio;
 
     // Hidratar plantilla visual, colores, hero y categorías iniciales antes de renderizar catálogo
@@ -1298,18 +1315,365 @@ function renderCheckoutSummary() {
   container.innerHTML = `${cart.map((i) => `<div class="checkout-item-row"><span>${i.qty}× ${i.name}</span><strong>${formatPrice(i.price * i.qty)}</strong></div>`).join('')}<div class="checkout-item-row mt-2" style="font-size: 1.05rem;"><strong>TOTAL</strong><strong style="color: var(--dorado-pan);">${formatPrice(getCartTotal())}</strong></div>`;
 }
 
+function sanitizarTextoPlanoWa(texto, maxLen = 100) {
+  return String(texto || '')
+    .replace(/[\r\n\u0000-\u001F\u007F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+}
+
+function esUrlHttpsSegura(url) {
+  const s = String(url || '').trim();
+  if (!s || s.length > 500 || !/^https:\/\/[^\s]+$/i.test(s)) return false;
+  try {
+    return new URL(s).protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+function obtenerDisponibilidadPagosDigitales(datos) {
+  if (!datos || typeof datos !== 'object') {
+    return { yape: false, plin: false, bcp: false, bbva: false };
+  }
+  const yapeNum = String(datos.yape_numero || '').trim();
+  const yapeQr = String(datos.yape_qr_url || '').trim();
+  const plinNum = String(datos.plin_numero || '').trim();
+  const bcpCta = String(datos.bcp_cuenta || '').trim();
+  const bcpCci = String(datos.bcp_cci || '').trim();
+  const bbvaCta = String(datos.bbva_cuenta || '').trim();
+  const bbvaCci = String(datos.bbva_cci || '').trim();
+
+  return {
+    yape: Boolean(yapeNum || esUrlHttpsSegura(yapeQr)),
+    plin: Boolean(plinNum),
+    bcp: Boolean(bcpCta || bcpCci),
+    bbva: Boolean(bbvaCta || bbvaCci)
+  };
+}
+
+function esMetodoDisponibleCheckout(method) {
+  if (!method) return false;
+  if (method === 'contraentrega') return true;
+  if (!METODOS_PAGO_DIGITALES.includes(method)) return false;
+  if (estadoPagosActual !== 'listo') return false;
+  const disp = obtenerDisponibilidadPagosDigitales(datosPagosActual);
+  return Boolean(disp[method]);
+}
+
+function obtenerOCrearBannerEstadoPagos() {
+  let banner = $('#paymentStatusBanner');
+  if (banner) return banner;
+
+  const firstOpt = $('.payment-option');
+  const row = firstOpt && firstOpt.closest ? firstOpt.closest('.row') : null;
+  if (!row || !row.parentNode) return null;
+
+  banner = document.createElement('div');
+  banner.id = 'paymentStatusBanner';
+  banner.className = 'mb-3 d-none';
+  row.parentNode.insertBefore(banner, row);
+  return banner;
+}
+
+function actualizarOpcionesPagoUI() {
+  const disp = estadoPagosActual === 'listo'
+    ? obtenerDisponibilidadPagosDigitales(datosPagosActual)
+    : { yape: false, plin: false, bcp: false, bbva: false };
+  const hayDigitales = Object.values(disp).some(Boolean);
+
+  $$('.payment-option').forEach(opt => {
+    const pay = opt.dataset.pay;
+    const col = (opt.closest && opt.closest('.col-md-6, .col-md-12')) || opt;
+    if (pay === 'contraentrega') {
+      col.classList.remove('d-none');
+      return;
+    }
+    const visible = estadoPagosActual === 'listo' && Boolean(disp[pay]);
+    col.classList.toggle('d-none', !visible);
+  });
+
+  if (selectedPayment && !esMetodoDisponibleCheckout(selectedPayment)) {
+    selectedPayment = null;
+    $$('.payment-option').forEach(o => o.classList.remove('selected'));
+    renderPaymentPanel(null);
+  } else if (selectedPayment) {
+    renderPaymentPanel(selectedPayment);
+  }
+
+  const banner = obtenerOCrearBannerEstadoPagos();
+  if (!banner) return;
+  banner.textContent = '';
+
+  if (estadoPagosActual === 'cargando') {
+    banner.className = 'alert alert-light border d-flex align-items-center gap-2 small mb-3';
+    const sp = document.createElement('span');
+    sp.className = 'spinner-border spinner-border-sm text-secondary';
+    sp.setAttribute('role', 'status');
+    sp.setAttribute('aria-hidden', 'true');
+    const txt = document.createElement('span');
+    txt.textContent = 'Cargando métodos de pago digitales...';
+    banner.appendChild(sp);
+    banner.appendChild(txt);
+    return;
+  }
+
+  if (estadoPagosActual === 'error') {
+    banner.className = 'alert alert-warning small mb-3';
+    banner.setAttribute('role', 'alert');
+    const msg = document.createElement('div');
+    msg.textContent = 'No pudimos cargar los datos de pago. Revisa tu conexión.';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'btnReintentarPagos';
+    btn.className = 'btn btn-sm btn-outline-dark mt-2';
+    btn.textContent = 'Reintentar';
+    btn.addEventListener('click', () => {
+      cargarMetodosPagoCheckout(true);
+    });
+    banner.appendChild(msg);
+    banner.appendChild(btn);
+    return;
+  }
+
+  if (estadoPagosActual === 'listo' && !hayDigitales) {
+    banner.className = 'alert alert-secondary small mb-3';
+    banner.textContent = 'Esta tienda no tiene métodos de pago digitales configurados. Elige Contra entrega o coordina por WhatsApp.';
+    return;
+  }
+
+  banner.className = 'mb-3 d-none';
+}
+
+async function cargarMetodosPagoCheckout(forzar = false) {
+  const negocioId = (window.negocioActual && window.negocioActual.id)
+    ? String(window.negocioActual.id)
+    : null;
+
+  if (!negocioId || !supabaseClient) {
+    estadoPagosActual = 'error';
+    datosPagosActual = null;
+    actualizarOpcionesPagoUI();
+    return;
+  }
+
+  if (pagosNegocioCacheOwnerId && String(pagosNegocioCacheOwnerId) !== negocioId) {
+    pagosNegocioCache.clear();
+    pagosCargaPromesaActual = null;
+    pagosCargaSeq++;
+  }
+  pagosNegocioCacheOwnerId = negocioId;
+
+  if (!forzar && pagosNegocioCache.has(negocioId)) {
+    datosPagosActual = pagosNegocioCache.get(negocioId);
+    estadoPagosActual = 'listo';
+    actualizarOpcionesPagoUI();
+    return;
+  }
+
+  if (pagosCargaPromesaActual && !forzar) {
+    return pagosCargaPromesaActual;
+  }
+
+  const seq = ++pagosCargaSeq;
+  estadoPagosActual = 'cargando';
+  datosPagosActual = null;
+  actualizarOpcionesPagoUI();
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timeoutId = null;
+  let rpcResuelta = false;
+  const sentinelTimeout = { __timeout: true };
+
+  let rpcBuilder = supabaseClient.rpc('obtener_metodos_pago', { p_negocio_id: negocioId });
+  if (controller && typeof rpcBuilder.abortSignal === 'function') {
+    rpcBuilder = rpcBuilder.abortSignal(controller.signal);
+  }
+  const rpcPromise = Promise.resolve(rpcBuilder);
+  const timeoutPromise = new Promise((resolve) => {
+    timeoutId = setTimeout(() => {
+      if (rpcResuelta || seq !== pagosCargaSeq) return;
+      resolve(sentinelTimeout);
+      if (controller) controller.abort();
+    }, TIMEOUT_PAGOS_MS);
+  });
+
+  const tarea = (async () => {
+    try {
+      const resultado = await Promise.race([rpcPromise, timeoutPromise]);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+
+      if (seq !== pagosCargaSeq || String(window.negocioActual?.id || '') !== negocioId) {
+        return;
+      }
+
+      if (resultado && resultado.__timeout) {
+        rpcPromise.catch(() => {});
+        rpcResuelta = true;
+        console.error('Tiempo de espera agotado (10 s) al cargar métodos de pago.');
+        estadoPagosActual = 'error';
+        datosPagosActual = null;
+        actualizarOpcionesPagoUI();
+        return;
+      }
+
+      rpcResuelta = true;
+      const { data, error } = resultado || {};
+      if (error) {
+        console.error('Error en RPC obtener_metodos_pago:', error);
+        estadoPagosActual = 'error';
+        datosPagosActual = null;
+        actualizarOpcionesPagoUI();
+        return;
+      }
+
+      const normalizados = (data && typeof data === 'object') ? data : {};
+      pagosNegocioCache.set(negocioId, normalizados);
+      datosPagosActual = normalizados;
+      estadoPagosActual = 'listo';
+      actualizarOpcionesPagoUI();
+    } catch (err) {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      rpcResuelta = true;
+      if (seq !== pagosCargaSeq || String(window.negocioActual?.id || '') !== negocioId) {
+        return;
+      }
+      console.error('Excepción cargando métodos de pago:', err);
+      estadoPagosActual = 'error';
+      datosPagosActual = null;
+      actualizarOpcionesPagoUI();
+    } finally {
+      if (pagosCargaPromesaActual === tarea) {
+        pagosCargaPromesaActual = null;
+      }
+    }
+  })();
+
+  pagosCargaPromesaActual = tarea;
+  return tarea;
+}
+
+function agregarLineaDatoPago(parent, etiqueta, valor) {
+  const lbl = document.createElement('div');
+  lbl.className = 'small text-muted';
+  lbl.textContent = etiqueta;
+  const val = document.createElement('div');
+  val.className = 'fw-bold mb-2';
+  val.textContent = valor;
+  parent.appendChild(lbl);
+  parent.appendChild(val);
+}
+
 function renderPaymentPanel(method) {
   const panel = $('#paymentPanel');
+  const compSection = $('#comprobanteSection');
   if (!panel) return;
-  if (!method) { panel.style.display = 'none'; return; }
-  const info = PAYMENT_INFO[method]; let html = '';
-  if (method === 'yape') html = `<h6 class="fw-bold mb-2">Pago con Yape</h6><div class="qr-box mb-2"><img src="${info.qr}"><div class="mt-2 small"><strong>Titular:</strong> ${info.titular}</div></div><div class="d-flex justify-content-between bg-white p-2 rounded"><span class="small"><strong>Número:</strong> ${info.phone}</span></div>`;
-  else if (method === 'plin') html = `<h6 class="fw-bold mb-2">Pago con Plin</h6><div class="bg-white p-3 rounded mb-2"><div class="small text-muted">Número</div><div class="fw-bold">${info.phone}</div></div>`;
-  else if (method === 'bcp' || method === 'bbva') html = `<h6 class="fw-bold mb-2">Transferencia ${info.banco}</h6><div class="bg-white p-3 rounded mb-2"><div class="small text-muted">Cuenta</div><div class="fw-bold mb-2">${info.cuenta}</div><div class="small text-muted">CCI</div><div class="fw-bold">${info.cci}</div></div>`;
-  else html = `<h6 class="fw-bold mb-2">Contra entrega</h6><p class="mb-0 small">${info.nota}</p>`;
-  panel.innerHTML = `<div class="payment-detail">${html}</div>`; panel.style.display = 'block';
-  const req = ['yape', 'plin', 'bcp', 'bbva'].includes(method);
-  $('#comprobanteSection').style.display = req ? 'block' : 'none';
+
+  panel.textContent = '';
+
+  if (!method || !esMetodoDisponibleCheckout(method)) {
+    panel.style.display = 'none';
+    if (compSection) compSection.style.display = 'none';
+    resetComprobante();
+    return;
+  }
+
+  const detail = document.createElement('div');
+  detail.className = 'payment-detail';
+  const datos = datosPagosActual || {};
+  const titular = String(datos.titular || '').trim();
+
+  const titulo = document.createElement('h6');
+  titulo.className = 'fw-bold mb-2';
+
+  if (method === 'yape') {
+    titulo.textContent = 'Pago con Yape';
+    detail.appendChild(titulo);
+
+    const qrUrl = String(datos.yape_qr_url || '').trim();
+    if (esUrlHttpsSegura(qrUrl)) {
+      const qrBox = document.createElement('div');
+      qrBox.className = 'qr-box mb-2';
+      const qrImg = document.createElement('img');
+      qrImg.alt = titular ? `Código QR de Yape a nombre de ${titular}` : 'Código QR de pago Yape';
+      qrImg.addEventListener('error', () => {
+        qrBox.remove();
+      });
+      qrImg.src = qrUrl;
+      qrBox.appendChild(qrImg);
+      detail.appendChild(qrBox);
+    }
+
+    const box = document.createElement('div');
+    box.className = 'bg-white p-3 rounded';
+    if (datos.yape_numero) {
+      agregarLineaDatoPago(box, 'Número', formatPhone(String(datos.yape_numero).trim()));
+    }
+    if (titular) {
+      const titEl = document.createElement('div');
+      titEl.className = 'small';
+      titEl.textContent = `A nombre de ${titular}`;
+      box.appendChild(titEl);
+    }
+    detail.appendChild(box);
+  } else if (method === 'plin') {
+    titulo.textContent = 'Pago con Plin';
+    detail.appendChild(titulo);
+
+    const box = document.createElement('div');
+    box.className = 'bg-white p-3 rounded';
+    if (datos.plin_numero) {
+      agregarLineaDatoPago(box, 'Número', formatPhone(String(datos.plin_numero).trim()));
+    }
+    if (titular) {
+      const titEl = document.createElement('div');
+      titEl.className = 'small';
+      titEl.textContent = `A nombre de ${titular}`;
+      box.appendChild(titEl);
+    }
+    detail.appendChild(box);
+  } else if (method === 'bcp' || method === 'bbva') {
+    titulo.textContent = method === 'bcp' ? 'Transferencia BCP' : 'Transferencia BBVA Continental';
+    detail.appendChild(titulo);
+
+    const box = document.createElement('div');
+    box.className = 'bg-white p-3 rounded';
+    const cuenta = method === 'bcp' ? datos.bcp_cuenta : datos.bbva_cuenta;
+    const cci = method === 'bcp' ? datos.bcp_cci : datos.bbva_cci;
+    if (cuenta) {
+      agregarLineaDatoPago(box, 'Cuenta', String(cuenta).trim());
+    }
+    if (cci) {
+      agregarLineaDatoPago(box, 'CCI', String(cci).trim());
+    }
+    if (titular) {
+      const titEl = document.createElement('div');
+      titEl.className = 'small';
+      titEl.textContent = `A nombre de ${titular}`;
+      box.appendChild(titEl);
+    }
+    detail.appendChild(box);
+  } else {
+    titulo.textContent = 'Contra entrega';
+    detail.appendChild(titulo);
+    const nota = document.createElement('p');
+    nota.className = 'mb-0 small';
+    nota.textContent = 'Pagas en efectivo al recibir tu pedido.';
+    detail.appendChild(nota);
+  }
+
+  panel.appendChild(detail);
+  panel.style.display = 'block';
+
+  const req = METODOS_PAGO_DIGITALES.includes(method);
+  if (compSection) compSection.style.display = req ? 'block' : 'none';
   if (!req) resetComprobante();
 }
 
@@ -1338,9 +1702,15 @@ async function confirmOrder() {
   if (!nombre || !telefono) return showToast('Completa nombre y teléfono', 'warning');
   if (tipo === 'Delivery' && !direccion) return showToast('Ingresa dirección', 'warning');
   if (!selectedPayment) return showToast('Selecciona un método de pago', 'warning');
-  if (['yape', 'plin', 'bcp', 'bbva'].includes(selectedPayment) && !comprobanteFile) return showToast('Adjunta la captura de tu pago', 'warning');
+  const pagoLabel = METODOS_PAGO_LABELS[selectedPayment];
+  if (!pagoLabel || !esMetodoDisponibleCheckout(selectedPayment)) {
+    actualizarOpcionesPagoUI();
+    return showToast('El método de pago elegido no está disponible en esta tienda.', 'warning');
+  }
+  const esMetodoDigital = METODOS_PAGO_DIGITALES.includes(selectedPayment);
+  if (esMetodoDigital && !comprobanteFile) return showToast('Adjunta la captura de tu pago', 'warning');
 
-  const total = getCartTotal(), pagoLabel = PAYMENT_INFO[selectedPayment].label;
+  const total = getCartTotal();
   const btn = $('#btnConfirmOrder'), orig = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = 'Procesando...';
 
@@ -1448,7 +1818,18 @@ async function confirmOrder() {
     let msg = `🛒 *NUEVO PEDIDO #${numeroPedido || ''} - ${storeName}*\n👤 ${nombre}\n📱 ${telefono}\n📍 ${tipo}\n`;
     if (tipo === 'Delivery') msg += `🏠 ${direccion}\n`;
     cart.forEach(i => { msg += `• ${i.qty}× ${i.name} — ${formatPrice(i.price * i.qty)}\n`; });
-    msg += `\n*TOTAL: ${formatPrice(total)}*\nPago: ${pagoLabel}`;
+    msg += `\n*TOTAL: ${formatPrice(total)}*`;
+    if (esMetodoDigital) {
+      const storeNamePlano = sanitizarTextoPlanoWa(storeName, 100) || 'Tienda';
+      const titularPlano = sanitizarTextoPlanoWa(datosPagosActual && datosPagosActual.titular, 100);
+      const lineaTitular = titularPlano ? ` a nombre de ${titularPlano} (${storeNamePlano})` : ` (${storeNamePlano})`;
+      msg += `\nMétodo de pago: ${pagoLabel}${lineaTitular} — pendiente de verificación`;
+      if (comprobantePath) {
+        msg += `\n📎 Comprobante adjunto`;
+      }
+    } else {
+      msg += `\nPago: ${pagoLabel}`;
+    }
     const waUrl = `https://wa.me/${storeWa}?text=${encodeURIComponent(msg)}`;
     const waWin = window.open(waUrl, '_blank');
     if (!waWin) { cart = []; saveCart(); window.location.href = waUrl; return; }
@@ -1497,12 +1878,15 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCheckoutSummary(); selectedPayment = null;
     $$('.payment-option').forEach(el => el.classList.remove('selected'));
     renderPaymentPanel(null);
+    cargarMetodosPagoCheckout(false);
     const offcanvas = bootstrap.Offcanvas.getInstance($('#cartOffcanvas')); if (offcanvas) offcanvas.hide();
     new bootstrap.Modal($('#checkoutModal')).show();
   });
   $$('.payment-option').forEach(opt => opt.addEventListener('click', () => {
+    const pay = opt.dataset.pay;
+    if (!esMetodoDisponibleCheckout(pay)) return;
     $$('.payment-option').forEach(o => o.classList.remove('selected'));
-    opt.classList.add('selected'); selectedPayment = opt.dataset.pay; renderPaymentPanel(selectedPayment);
+    opt.classList.add('selected'); selectedPayment = pay; renderPaymentPanel(selectedPayment);
   }));
   if ($('#cTipoEntrega')) $('#cTipoEntrega').addEventListener('change', (e) => { $('#direccionGroup').style.display = e.target.value === 'Delivery' ? 'block' : 'none'; });
   if ($('#btnConfirmOrder')) $('#btnConfirmOrder').addEventListener('click', confirmOrder);
