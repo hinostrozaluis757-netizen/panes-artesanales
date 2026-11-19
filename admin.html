@@ -68,6 +68,7 @@
           <li class="nav-item"><button class="nav-link" data-target="tabPOS"><i class="bi bi-qr-code-scan me-1"></i> POS Físico</button></li>
           <li class="nav-item"><button class="nav-link" data-target="tabVentaExpress"><i class="bi bi-lightning-charge-fill me-1"></i> Venta Rápida</button></li>
           <li class="nav-item"><button class="nav-link" data-target="tabUbicacion"><i class="bi bi-geo-alt me-1"></i> Mi Ubicación</button></li>
+          <li class="nav-item"><button class="nav-link" data-target="tabMetodosPago"><i class="bi bi-wallet2 me-1"></i> Métodos de Pago</button></li>
         </ul>
         <a href="index.html" target="_blank" class="btn btn-sm btn-outline-success rounded-pill px-3 d-none d-sm-inline-flex align-items-center" id="btnVerTienda"><i class="bi bi-box-arrow-up-right me-1"></i> Ver tienda</a>
         <span class="small text-muted d-none d-md-inline badge bg-light text-dark px-3 py-2" id="userEmail"></span>
@@ -475,6 +476,177 @@
                 <span class="badge bg-secondary-subtle text-dark" id="ubicacionPreviewBadge">Sin configurar</span>
               </div>
               <div id="ubicacionPreview"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PESTAÑA 6: MÉTODOS DE PAGO -->
+    <div id="tabMetodosPago" class="d-none">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="fw-bold mb-0"><i class="bi bi-wallet2 text-success me-2"></i>Métodos de Pago de tu Tienda</h4>
+        <span class="badge bg-light text-dark border rounded-pill px-3 py-2" id="pagosConfigBadge">
+          Sin cargar
+        </span>
+      </div>
+
+      <div class="alert alert-warning border-0 shadow-sm small mb-3" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <strong>Atención:</strong> Estos datos se muestran públicamente a tus clientes al pagar. Revísalos bien: un error enviaría el dinero a otra persona.
+      </div>
+
+      <div id="pagosEstadoAlerta" class="alert d-none small mb-3" role="alert"></div>
+
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h6 class="fw-bold mb-0">Configurar Billeteras y Cuentas Bancarias</h6>
+                <span class="small text-muted">Deja en blanco lo que no uses</span>
+              </div>
+
+              <form id="formMetodosPago" autocomplete="off" novalidate>
+                <div class="mb-3">
+                  <label for="pagoTitularNombre" class="form-label small fw-bold">Nombre del Titular de las cuentas / billeteras</label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="pagoTitularNombre"
+                    maxlength="100"
+                    autocomplete="off"
+                    placeholder="Ej. María Gómez o Mi Negocio SAC"
+                  >
+                  <div class="form-text small">Obligatorio si habilitas al menos un método digital (2 a 100 caracteres).</div>
+                </div>
+
+                <hr class="my-3">
+
+                <div class="row g-3 mb-3">
+                  <div class="col-md-5">
+                    <label for="pagoYapeNumero" class="form-label small fw-bold">Yape (Celular)</label>
+                    <input
+                      type="tel"
+                      class="form-control"
+                      id="pagoYapeNumero"
+                      inputmode="numeric"
+                      maxlength="15"
+                      autocomplete="off"
+                      placeholder="987654321"
+                    >
+                    <div class="form-text small">9 dígitos empezando en 9.</div>
+                  </div>
+                  <div class="col-md-7">
+                    <label for="pagoYapeQrUrl" class="form-label small fw-bold">URL de imagen QR Yape (Opcional)</label>
+                    <input
+                      type="url"
+                      class="form-control"
+                      id="pagoYapeQrUrl"
+                      maxlength="500"
+                      autocomplete="off"
+                      placeholder="https://..."
+                    >
+                    <div class="form-text small">Solo enlaces https:// (máx. 500 caracteres).</div>
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label for="pagoPlinNumero" class="form-label small fw-bold">Plin (Celular)</label>
+                  <input
+                    type="tel"
+                    class="form-control"
+                    id="pagoPlinNumero"
+                    inputmode="numeric"
+                    maxlength="15"
+                    autocomplete="off"
+                    placeholder="987654321"
+                  >
+                  <div class="form-text small">9 dígitos empezando en 9.</div>
+                </div>
+
+                <hr class="my-3">
+
+                <div class="row g-3 mb-3">
+                  <div class="col-md-6">
+                    <label for="pagoBcpCuenta" class="form-label small fw-bold">Cuenta BCP</label>
+                    <input
+                      type="text"
+                      class="form-control"
+                      id="pagoBcpCuenta"
+                      inputmode="numeric"
+                      maxlength="20"
+                      autocomplete="off"
+                      placeholder="Ej. 191-1234567-0-12"
+                    >
+                    <div class="form-text small">Dígitos y guiones (8 a 20 caracteres).</div>
+                  </div>
+                  <div class="col-md-6">
+                    <label for="pagoBcpCci" class="form-label small fw-bold">CCI BCP</label>
+                    <input
+                      type="text"
+                      class="form-control"
+                      id="pagoBcpCci"
+                      inputmode="numeric"
+                      maxlength="20"
+                      autocomplete="off"
+                      placeholder="20 dígitos sin guiones"
+                    >
+                    <div class="form-text small">Exactamente 20 dígitos.</div>
+                  </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                  <div class="col-md-6">
+                    <label for="pagoBbvaCuenta" class="form-label small fw-bold">Cuenta BBVA</label>
+                    <input
+                      type="text"
+                      class="form-control"
+                      id="pagoBbvaCuenta"
+                      inputmode="numeric"
+                      maxlength="20"
+                      autocomplete="off"
+                      placeholder="Ej. 0011-0123-0100123456"
+                    >
+                    <div class="form-text small">Dígitos y guiones (8 a 20 caracteres).</div>
+                  </div>
+                  <div class="col-md-6">
+                    <label for="pagoBbvaCci" class="form-label small fw-bold">CCI BBVA</label>
+                    <input
+                      type="text"
+                      class="form-control"
+                      id="pagoBbvaCci"
+                      inputmode="numeric"
+                      maxlength="20"
+                      autocomplete="off"
+                      placeholder="20 dígitos sin guiones"
+                    >
+                    <div class="form-text small">Exactamente 20 dígitos.</div>
+                  </div>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                  <button type="submit" class="btn btn-success fw-bold px-4" id="btnGuardarMetodosPago">
+                    <i class="bi bi-check2-circle me-1"></i> Guardar Métodos de Pago
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="btnLimpiarMetodosPago">
+                    Limpiar formulario
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-4">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+              <h6 class="fw-bold mb-2"><i class="bi bi-qr-code me-1 text-primary"></i> Vista Previa del QR Yape</h6>
+              <p class="small text-muted mb-3">Si pegas un enlace https:// de tu imagen QR de Yape, verifica aquí que cargue correctamente.</p>
+              <div id="pagoYapeQrPreviewWrap" class="text-center border rounded-3 p-3 bg-light d-none mb-2">
+                <img id="pagoYapeQrPreview" alt="Vista previa de QR Yape" class="img-fluid rounded" style="max-height: 220px;">
+              </div>
+              <p id="pagoYapeQrPreviewStatus" class="small text-muted mb-0">Sin URL de QR ingresada.</p>
             </div>
           </div>
         </div>

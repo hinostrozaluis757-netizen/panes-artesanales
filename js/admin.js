@@ -159,6 +159,10 @@ let carritoExpress = [];
 let productosExpressCache = [];
 let procesandoVentaExpress = false;
 
+// Variables de estado del módulo Métodos de Pago
+let pagosSqlFaltanteAdmin = false;
+let guardandoPagosAdmin = false;
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 const fmt = (n) => `S/ ${Number(n || 0).toFixed(2)}`;
@@ -277,6 +281,9 @@ function resetearEstadoAdmin() {
   productosExpressCache = [];
   procesandoVentaExpress = false;
 
+  pagosSqlFaltanteAdmin = false;
+  guardandoPagosAdmin = false;
+
   if (chartInstance) {
     try { chartInstance.destroy(); } catch (_) {}
     chartInstance = null;
@@ -355,9 +362,11 @@ function resetearEstadoAdmin() {
     $('#ubicacionPreviewBadge').textContent = 'Sin configurar';
   }
 
+  limpiarUiMetodosPagoAdmin();
+
   $$('#adminTabs .nav-link').forEach(b => b.classList.toggle('active', b.dataset.target === 'tabPedidos'));
   if ($('#tabPedidos')) $('#tabPedidos').classList.remove('d-none');
-  ['#tabProductos', '#tabCaja', '#tabPOS', '#tabVentaExpress', '#tabUbicacion'].forEach(sel => {
+  ['#tabProductos', '#tabCaja', '#tabPOS', '#tabVentaExpress', '#tabUbicacion', '#tabMetodosPago'].forEach(sel => {
     const el = $(sel);
     if (el) el.classList.add('d-none');
   });
@@ -565,6 +574,8 @@ async function aplicarBloqueoSuspension(negocio, email = '') {
       el.dataset.suspendedLocked = '1';
     }
   });
+
+  aplicarModoSoloLecturaPagos(true);
 }
 
 function showDashboard(email) {
@@ -726,11 +737,15 @@ $$('#adminTabs .nav-link').forEach(btn => {
     if ($('#tabPOS')) $('#tabPOS').classList.add('d-none');
     if ($('#tabVentaExpress')) $('#tabVentaExpress').classList.add('d-none');
     if ($('#tabUbicacion')) $('#tabUbicacion').classList.add('d-none');
+    if ($('#tabMetodosPago')) $('#tabMetodosPago').classList.add('d-none');
     // Mostrar la seleccionada
     const targetEl = $('#' + target);
     if (targetEl) targetEl.classList.remove('d-none');
     if (target === 'tabUbicacion') {
       sincronizarFormularioUbicacion();
+    }
+    if (target === 'tabMetodosPago') {
+      await cargarMetodosPagoAdmin();
     }
     if (target === 'tabVentaExpress') {
       await cargarProductosExpress();
@@ -3367,6 +3382,458 @@ if ($('#btnCobrarExpressEfectivo')) {
 }
 if ($('#btnCobrarExpressYape')) {
   $('#btnCobrarExpressYape').addEventListener('click', () => procesarVentaExpress('Yape'));
+}
+
+// =============================================================================
+// MÓDULO ADICIONAL: MÉTODOS DE PAGO POR NEGOCIO (negocios_pagos)
+// =============================================================================
+const PAGOS_INPUT_IDS = [
+  '#pagoTitularNombre',
+  '#pagoYapeNumero',
+  '#pagoYapeQrUrl',
+  '#pagoPlinNumero',
+  '#pagoBcpCuenta',
+  '#pagoBcpCci',
+  '#pagoBbvaCuenta',
+  '#pagoBbvaCci'
+];
+
+function mostrarAlertaMetodosPago(mensaje, tipo = 'warning') {
+  const el = $('#pagosEstadoAlerta');
+  if (!el) return;
+  if (!mensaje) {
+    el.textContent = '';
+    el.className = 'alert d-none small mb-3';
+    return;
+  }
+  const claseTipo = tipo === 'danger'
+    ? 'alert-danger'
+    : (tipo === 'info' ? 'alert-info' : 'alert-warning');
+  el.textContent = mensaje;
+  el.className = `alert ${claseTipo} small mb-3`;
+}
+
+function aplicarModoSoloLecturaPagos(soloLectura) {
+  PAGOS_INPUT_IDS.forEach(sel => {
+    const inp = $(sel);
+    if (!inp) return;
+    inp.readOnly = !!soloLectura;
+    inp.disabled = !!soloLectura;
+  });
+  const btnGuardar = $('#btnGuardarMetodosPago');
+  const btnLimpiar = $('#btnLimpiarMetodosPago');
+  if (btnGuardar) btnGuardar.disabled = !!soloLectura || pagosSqlFaltanteAdmin;
+  if (btnLimpiar) btnLimpiar.disabled = !!soloLectura || pagosSqlFaltanteAdmin;
+}
+
+function renderQrPreviewPagos() {
+  const url = String($('#pagoYapeQrUrl')?.value || '').trim();
+  const wrap = $('#pagoYapeQrPreviewWrap');
+  const img = $('#pagoYapeQrPreview');
+  const status = $('#pagoYapeQrPreviewStatus');
+  if (!wrap || !img || !status) return;
+
+  if (!url) {
+    img.removeAttribute('src');
+    delete img.dataset.previewUrl;
+    wrap.classList.add('d-none');
+    status.textContent = 'Sin URL de QR ingresada.';
+    return;
+  }
+
+  let urlValida = url.length <= 500 && /^https:\/\/[^\s]+$/i.test(url);
+  if (urlValida) {
+    try {
+      urlValida = new URL(url).protocol === 'https:';
+    } catch (_) {
+      urlValida = false;
+    }
+  }
+
+  if (!urlValida) {
+    img.removeAttribute('src');
+    delete img.dataset.previewUrl;
+    wrap.classList.add('d-none');
+    status.textContent = 'La URL debe empezar con https:// (máx. 500 caracteres sin espacios) para previsualizar el QR.';
+    return;
+  }
+
+  img.dataset.previewUrl = url;
+  img.src = url;
+  wrap.classList.remove('d-none');
+  status.textContent = 'Cargando vista previa del QR...';
+}
+
+function limpiarUiMetodosPagoAdmin() {
+  PAGOS_INPUT_IDS.forEach(sel => {
+    const inp = $(sel);
+    if (inp) inp.value = '';
+  });
+  mostrarAlertaMetodosPago('');
+  const badge = $('#pagosConfigBadge');
+  if (badge) {
+    badge.className = 'badge bg-light text-dark border rounded-pill px-3 py-2';
+    badge.textContent = 'Sin cargar';
+  }
+  aplicarModoSoloLecturaPagos(false);
+  renderQrPreviewPagos();
+}
+
+function hidratarFormularioMetodosPago(row) {
+  const r = row || {};
+  const setVal = (sel, val) => {
+    const el = $(sel);
+    if (el) el.value = String(val || '');
+  };
+  setVal('#pagoTitularNombre', r.pago_titular_nombre);
+  setVal('#pagoYapeNumero', r.pago_yape_numero);
+  setVal('#pagoYapeQrUrl', r.pago_yape_qr_url);
+  setVal('#pagoPlinNumero', r.pago_plin_numero);
+  setVal('#pagoBcpCuenta', r.pago_banco_bcp_cuenta);
+  setVal('#pagoBcpCci', r.pago_banco_bcp_cci);
+  setVal('#pagoBbvaCuenta', r.pago_banco_bbva_cuenta);
+  setVal('#pagoBbvaCci', r.pago_banco_bbva_cci);
+
+  const hayDigital = Boolean(
+    r.pago_yape_numero || r.pago_yape_qr_url || r.pago_plin_numero ||
+    r.pago_banco_bcp_cuenta || r.pago_banco_bcp_cci ||
+    r.pago_banco_bbva_cuenta || r.pago_banco_bbva_cci
+  );
+  const badge = $('#pagosConfigBadge');
+  if (badge) {
+    badge.className = hayDigital
+      ? 'badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2'
+      : 'badge bg-secondary-subtle text-dark rounded-pill px-3 py-2';
+    badge.textContent = hayDigital ? 'Métodos digitales activos' : 'Solo Contra entrega';
+  }
+
+  renderQrPreviewPagos();
+}
+
+function esErrorTablaPagosInexistente(error) {
+  if (!error) return false;
+  const code = String(error.code || '').toUpperCase();
+  if (code === '42P01' || code === 'PGRST205') return true;
+  const texto = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`;
+  return /negocios_pagos.*(does not exist|no existe)|could not find the table/i.test(texto);
+}
+
+function mapearErrorDbPagos(error) {
+  if (esErrorTablaPagosInexistente(error)) {
+    return 'Falta ejecutar la actualización de base de datos (sql/11)';
+  }
+  const code = String(error?.code || '');
+  const raw = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+  if (code === '42501' || raw.includes('row-level security') || raw.includes('permission denied')) {
+    return 'Tu cuenta está suspendida o no tienes permisos para editar estos datos.';
+  }
+  if (code === '23514') {
+    const mapaCheck = [
+      ['pagos_yape_fmt', 'El celular de Yape debe tener 9 dígitos y empezar con 9.'],
+      ['pagos_plin_fmt', 'El celular de Plin debe tener 9 dígitos y empezar con 9.'],
+      ['pagos_qr_fmt', 'La URL del QR Yape debe iniciar con https:// y tener máximo 500 caracteres sin espacios.'],
+      ['pagos_bcp_cta_fmt', 'La cuenta BCP debe tener entre 8 y 20 caracteres (solo dígitos y guiones).'],
+      ['pagos_bcp_cci_fmt', 'El CCI BCP debe tener exactamente 20 dígitos.'],
+      ['pagos_bbva_cta_fmt', 'La cuenta BBVA debe tener entre 8 y 20 caracteres (solo dígitos y guiones).'],
+      ['pagos_bbva_cci_fmt', 'El CCI BBVA debe tener exactamente 20 dígitos.'],
+      ['pagos_titular_len', 'El nombre del titular debe tener entre 2 y 100 caracteres.']
+    ];
+    for (const [nombreCheck, msgLegible] of mapaCheck) {
+      if (raw.includes(nombreCheck)) return msgLegible;
+    }
+    return 'Alguno de los datos ingresados no cumple con el formato permitido.';
+  }
+  return 'No se pudieron guardar los métodos de pago. Verifica tu conexión e intenta nuevamente.';
+}
+
+function normalizarCelularPago(raw, etiqueta) {
+  const limpio = String(raw || '')
+    .trim()
+    .replace(/[\s\-()]+/g, '')
+    .replace(/^\+?51(?=\d{9}$)/, '');
+  if (!limpio) return { ok: true, valor: null };
+  if (!/^9\d{8}$/.test(limpio)) {
+    return {
+      ok: false,
+      error: `El celular de ${etiqueta} debe tener 9 dígitos y empezar con 9 (ej. 987654321).`
+    };
+  }
+  return { ok: true, valor: limpio };
+}
+
+function validarCuentaBancariaPago(raw, banco) {
+  const val = String(raw || '').trim();
+  if (!val) return { ok: true, valor: null };
+  if (!/^[0-9-]{8,20}$/.test(val)) {
+    return {
+      ok: false,
+      error: `La cuenta ${banco} debe tener entre 8 y 20 caracteres (solo dígitos y guiones).`
+    };
+  }
+  return { ok: true, valor: val };
+}
+
+function validarCciPago(raw, banco) {
+  const val = String(raw || '').trim();
+  if (!val) return { ok: true, valor: null };
+  if (!/^\d{20}$/.test(val)) {
+    return {
+      ok: false,
+      error: `El CCI ${banco} debe tener exactamente 20 dígitos numéricos (sin guiones ni espacios).`
+    };
+  }
+  return { ok: true, valor: val };
+}
+
+function validarQrHttpsPago(raw) {
+  const val = String(raw || '').trim();
+  if (!val) return { ok: true, valor: null };
+  if (val.length > 500 || !/^https:\/\/[^\s]+$/i.test(val)) {
+    return {
+      ok: false,
+      error: 'La URL del QR Yape debe iniciar con https:// y tener máximo 500 caracteres sin espacios.'
+    };
+  }
+  try {
+    if (new URL(val).protocol !== 'https:') {
+      return { ok: false, error: 'La URL del QR Yape debe usar protocolo https://.' };
+    }
+  } catch (_) {
+    return { ok: false, error: 'La URL del QR Yape no es válida.' };
+  }
+  return { ok: true, valor: val };
+}
+
+async function cargarMetodosPagoAdmin() {
+  if (!supabaseClient) return;
+  let tenantId;
+  try {
+    tenantId = getTenantIdOrThrow();
+  } catch (_) {
+    limpiarUiMetodosPagoAdmin();
+    return;
+  }
+
+  pagosSqlFaltanteAdmin = false;
+  mostrarAlertaMetodosPago('');
+  const suspendido = cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('negocios_pagos')
+      .select('*')
+      .eq('negocio_id', tenantId)
+      .maybeSingle();
+
+    if (getNegocioActivoId() !== tenantId) return;
+
+    if (error) {
+      console.error('Error consultando negocios_pagos:', error);
+      if (esErrorTablaPagosInexistente(error)) {
+        pagosSqlFaltanteAdmin = true;
+        mostrarAlertaMetodosPago('Falta ejecutar la actualización de base de datos (sql/11)', 'danger');
+        aplicarModoSoloLecturaPagos(true);
+      } else {
+        mostrarAlertaMetodosPago('No se pudieron cargar tus métodos de pago. Intenta nuevamente.', 'danger');
+      }
+      return;
+    }
+
+    hidratarFormularioMetodosPago(data);
+    aplicarModoSoloLecturaPagos(suspendido);
+    if (suspendido) {
+      mostrarAlertaMetodosPago('Tu negocio está suspendido: los métodos de pago están en modo solo lectura.', 'warning');
+    }
+  } catch (err) {
+    if (getNegocioActivoId() !== tenantId) return;
+    console.error('Excepción cargando métodos de pago:', err);
+    mostrarAlertaMetodosPago('No se pudieron cargar tus métodos de pago. Revisa tu conexión.', 'danger');
+  }
+}
+
+async function guardarMetodosPagoAdmin(e) {
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
+  if (!supabaseClient || guardandoPagosAdmin) return;
+
+  if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false) {
+    aplicarModoSoloLecturaPagos(true);
+    mostrarAlertaMetodosPago('Tu negocio está suspendido: no puedes modificar métodos de pago.', 'danger');
+    return;
+  }
+
+  if (pagosSqlFaltanteAdmin) {
+    mostrarAlertaMetodosPago('Falta ejecutar la actualización de base de datos (sql/11)', 'danger');
+    return;
+  }
+
+  let tenantId;
+  try {
+    tenantId = getTenantIdOrThrow();
+  } catch (err) {
+    toast(esc(err.message || 'Sesión de negocio inválida.'), 'danger');
+    return;
+  }
+
+  const yape = normalizarCelularPago($('#pagoYapeNumero')?.value, 'Yape');
+  if (!yape.ok) {
+    mostrarAlertaMetodosPago(yape.error, 'warning');
+    $('#pagoYapeNumero')?.focus();
+    return;
+  }
+  const qr = validarQrHttpsPago($('#pagoYapeQrUrl')?.value);
+  if (!qr.ok) {
+    mostrarAlertaMetodosPago(qr.error, 'warning');
+    $('#pagoYapeQrUrl')?.focus();
+    return;
+  }
+  const plin = normalizarCelularPago($('#pagoPlinNumero')?.value, 'Plin');
+  if (!plin.ok) {
+    mostrarAlertaMetodosPago(plin.error, 'warning');
+    $('#pagoPlinNumero')?.focus();
+    return;
+  }
+  const bcpCuenta = validarCuentaBancariaPago($('#pagoBcpCuenta')?.value, 'BCP');
+  if (!bcpCuenta.ok) {
+    mostrarAlertaMetodosPago(bcpCuenta.error, 'warning');
+    $('#pagoBcpCuenta')?.focus();
+    return;
+  }
+  const bcpCci = validarCciPago($('#pagoBcpCci')?.value, 'BCP');
+  if (!bcpCci.ok) {
+    mostrarAlertaMetodosPago(bcpCci.error, 'warning');
+    $('#pagoBcpCci')?.focus();
+    return;
+  }
+  const bbvaCuenta = validarCuentaBancariaPago($('#pagoBbvaCuenta')?.value, 'BBVA');
+  if (!bbvaCuenta.ok) {
+    mostrarAlertaMetodosPago(bbvaCuenta.error, 'warning');
+    $('#pagoBbvaCuenta')?.focus();
+    return;
+  }
+  const bbvaCci = validarCciPago($('#pagoBbvaCci')?.value, 'BBVA');
+  if (!bbvaCci.ok) {
+    mostrarAlertaMetodosPago(bbvaCci.error, 'warning');
+    $('#pagoBbvaCci')?.focus();
+    return;
+  }
+
+  const hayMetodoDigital = Boolean(
+    yape.valor || qr.valor || plin.valor ||
+    bcpCuenta.valor || bcpCci.valor || bbvaCuenta.valor || bbvaCci.valor
+  );
+
+  const titularLimpio = String($('#pagoTitularNombre')?.value || '')
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .trim();
+
+  if (hayMetodoDigital && !titularLimpio) {
+    mostrarAlertaMetodosPago('Ingresa el nombre del titular (obligatorio si configuras al menos un método digital).', 'warning');
+    $('#pagoTitularNombre')?.focus();
+    return;
+  }
+
+  if (titularLimpio && (titularLimpio.length < 2 || titularLimpio.length > 100)) {
+    mostrarAlertaMetodosPago('El nombre del titular debe tener entre 2 y 100 caracteres.', 'warning');
+    $('#pagoTitularNombre')?.focus();
+    return;
+  }
+
+  mostrarAlertaMetodosPago('');
+  guardandoPagosAdmin = true;
+  const btn = $('#btnGuardarMetodosPago');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
+  }
+
+  try {
+    const payload = {
+      negocio_id: tenantId,
+      pago_titular_nombre: titularLimpio || null,
+      pago_yape_numero: yape.valor || null,
+      pago_yape_qr_url: qr.valor || null,
+      pago_plin_numero: plin.valor || null,
+      pago_banco_bcp_cuenta: bcpCuenta.valor || null,
+      pago_banco_bcp_cci: bcpCci.valor || null,
+      pago_banco_bbva_cuenta: bbvaCuenta.valor || null,
+      pago_banco_bbva_cci: bbvaCci.valor || null
+    };
+
+    const { data, error } = await supabaseClient
+      .from('negocios_pagos')
+      .upsert(payload, { onConflict: 'negocio_id' })
+      .select()
+      .single();
+
+    if (error) {
+      if (esErrorTablaPagosInexistente(error)) {
+        pagosSqlFaltanteAdmin = true;
+      }
+      console.error('Error guardando negocios_pagos:', error);
+      const msg = mapearErrorDbPagos(error);
+      mostrarAlertaMetodosPago(msg, 'danger');
+      toast(esc(msg), 'danger');
+      return;
+    }
+
+    if (getNegocioActivoId() !== tenantId) return;
+    if (!data || String(data.negocio_id) !== tenantId) {
+      mostrarAlertaMetodosPago('No se pudo confirmar el guardado para este negocio.', 'danger');
+      return;
+    }
+
+    hidratarFormularioMetodosPago(data);
+    toast('✅ Métodos de pago guardados correctamente.', 'success');
+  } catch (err) {
+    console.error('Excepción guardando negocios_pagos:', err);
+    const msg = mapearErrorDbPagos(err);
+    mostrarAlertaMetodosPago(msg, 'danger');
+    toast(esc(msg), 'danger');
+  } finally {
+    guardandoPagosAdmin = false;
+    if (btn) {
+      btn.innerHTML = origHtml;
+      btn.disabled = cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false || pagosSqlFaltanteAdmin;
+    }
+  }
+}
+
+if ($('#pagoYapeQrUrl')) {
+  $('#pagoYapeQrUrl').addEventListener('input', renderQrPreviewPagos);
+}
+if ($('#pagoYapeQrPreview')) {
+  $('#pagoYapeQrPreview').addEventListener('load', () => {
+    const status = $('#pagoYapeQrPreviewStatus');
+    if (status && $('#pagoYapeQrPreview')?.getAttribute('src')) {
+      status.textContent = 'Vista previa del QR lista.';
+    }
+  });
+  $('#pagoYapeQrPreview').addEventListener('error', () => {
+    const wrap = $('#pagoYapeQrPreviewWrap');
+    const img = $('#pagoYapeQrPreview');
+    const status = $('#pagoYapeQrPreviewStatus');
+    if (img && img.getAttribute('src')) {
+      img.removeAttribute('src');
+      delete img.dataset.previewUrl;
+      if (wrap) wrap.classList.add('d-none');
+      if (status) status.textContent = 'No se pudo cargar la imagen desde esa URL.';
+    }
+  });
+}
+if ($('#formMetodosPago')) {
+  $('#formMetodosPago').addEventListener('submit', guardarMetodosPagoAdmin);
+}
+if ($('#btnLimpiarMetodosPago')) {
+  $('#btnLimpiarMetodosPago').addEventListener('click', () => {
+    if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false || pagosSqlFaltanteAdmin || guardandoPagosAdmin) return;
+    PAGOS_INPUT_IDS.forEach(sel => {
+      const el = $(sel);
+      if (el) el.value = '';
+    });
+    mostrarAlertaMetodosPago('Campos limpiados. Pulsa "Guardar Métodos de Pago" para aplicar el cambio en tu tienda.', 'info');
+    renderQrPreviewPagos();
+  });
 }
 
 // Inicialización de la sesión al cargar el archivo
