@@ -1189,6 +1189,31 @@ if ($('#btnCopiarWhatsAppCreds')) {
   });
 }
 
+async function parsearRespuestaEdge(resp) {
+  const rawText = await resp.text();
+  let resJson = {};
+  if (rawText) {
+    try {
+      resJson = JSON.parse(rawText);
+    } catch (_) {
+      resJson = {};
+    }
+  }
+
+  if (!resp.ok) {
+    const errPrincipal = resJson?.error || resJson?.message || resJson?.msg || rawText.trim();
+    const detalleExtra = resJson?.postgres_error || resJson?.detail || '';
+    const mensajeFinal = errPrincipal
+      ? (detalleExtra && !String(errPrincipal).includes(detalleExtra)
+          ? `${errPrincipal} (${detalleExtra})`
+          : String(errPrincipal))
+      : `HTTP ${resp.status}`;
+    throw new Error(mensajeFinal);
+  }
+
+  return resJson;
+}
+
 if ($('#formCrearNegocio')) {
   $('#formCrearNegocio').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1262,10 +1287,7 @@ if ($('#formCrearNegocio')) {
         })
       }, 15000);
 
-      const resJson = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        throw new Error(resJson.error || `Error del servidor (${resp.status})`);
-      }
+      const resJson = await parsearRespuestaEdge(resp);
 
       const modalCrearEl = $('#modalCrearNegocio');
       if (modalCrearEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {

@@ -431,6 +431,20 @@ function showLogin() {
   $('#dashboardView').classList.add('d-none'); 
 }
 
+function mostrarErrorLogin(mensaje) {
+  const errEl = $('#loginError');
+  if (!errEl) return;
+  errEl.textContent = mensaje;
+  errEl.classList.remove('d-none');
+}
+
+function limpiarErrorLogin() {
+  const errEl = $('#loginError');
+  if (!errEl) return;
+  errEl.textContent = '';
+  errEl.classList.add('d-none');
+}
+
 async function resolverNegocioYIniciar() {
   const seq = ++authResolutionSeq;
   try {
@@ -447,7 +461,13 @@ async function resolverNegocioYIniciar() {
     if (seq !== authResolutionSeq) return;
 
     if (userError || !user || !user.id) {
-      try { await supabaseClient.auth.signOut(); } catch (_) {}
+      try {
+        isSigningOut = true;
+        await supabaseClient.auth.signOut();
+      } catch (_) {}
+      finally {
+        isSigningOut = false;
+      }
       resetearEstadoAdmin();
       showLogin();
       return;
@@ -464,10 +484,16 @@ async function resolverNegocioYIniciar() {
 
     if (error) {
       console.error('Error al consultar negocios asignados:', error);
-      alert('Error de conexión al consultar el negocio: ' + error.message);
-      try { await supabaseClient.auth.signOut(); } catch (_) {}
+      try {
+        isSigningOut = true;
+        await supabaseClient.auth.signOut();
+      } catch (_) {}
+      finally {
+        isSigningOut = false;
+      }
       resetearEstadoAdmin();
       showLogin();
+      mostrarErrorLogin('Error de conexión al consultar tu negocio: ' + (error.message || 'intenta nuevamente.'));
       return;
     }
 
@@ -477,10 +503,16 @@ async function resolverNegocioYIniciar() {
     );
 
     if (negociosPropios.length === 0) {
-      alert('⚠️ Este usuario no tiene un negocio asignado en el sistema.');
-      try { await supabaseClient.auth.signOut(); } catch (_) {}
+      try {
+        isSigningOut = true;
+        await supabaseClient.auth.signOut();
+      } catch (_) {}
+      finally {
+        isSigningOut = false;
+      }
       resetearEstadoAdmin();
       showLogin();
+      mostrarErrorLogin('Usuario autenticado, pero no tiene un negocio asignado. Contacta al administrador de la plataforma');
       return;
     }
 
@@ -693,17 +725,23 @@ $('#loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   resetearEstadoAdmin();
   const btn = $('#loginBtn'), orig = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = 'Verificando...'; $('#loginError').classList.add('d-none');
-  const { error } = await supabaseClient.auth.signInWithPassword({ 
-    email: $('#loginEmail').value.trim(), 
-    password: $('#loginPassword').value 
-  });
-  btn.disabled = false; btn.innerHTML = orig;
-  if (error) { 
-    $('#loginError').textContent = '❌ Credenciales incorrectas'; 
-    $('#loginError').classList.remove('d-none'); 
-  } else {
-    await resolverNegocioYIniciar();
+  btn.disabled = true; btn.innerHTML = 'Verificando...'; limpiarErrorLogin();
+  try {
+    const { error } = await supabaseClient.auth.signInWithPassword({ 
+      email: $('#loginEmail').value.trim(), 
+      password: $('#loginPassword').value 
+    });
+    if (error) {
+      mostrarErrorLogin('❌ Credenciales incorrectas');
+    } else {
+      await resolverNegocioYIniciar();
+    }
+  } catch (err) {
+    console.error('Excepción en inicio de sesión:', err);
+    mostrarErrorLogin('Error de conexión al iniciar sesión. Intenta nuevamente.');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
   }
 });
 
@@ -717,6 +755,7 @@ $('#logoutBtn').addEventListener('click', async () => {
     }
   } finally {
     resetearEstadoAdmin();
+    limpiarErrorLogin();
     showLogin();
     isSigningOut = false;
   }
