@@ -258,6 +258,7 @@ PLANTILLAS_GIRO.libreria = crearPlantillaDesdeBaseGeneral({
   cartaTitulo: 'Catálogo Escolar y Oficina',
   icono: 'bi-book-half',
   descripcionFooter: 'Artículos escolares, oficina, arte y regalos con atención rápida por WhatsApp.',
+  heroImagen: 'https://images.unsplash.com/photo-1456735190827-d1262f71b8a3?auto=format&fit=crop&w=1920&q=80',
   colores: { primario: '#0284C7', secundario: '#0369A1', acento: '#F59E0B', acentoHover: '#D97706', fondoSuave: '#E0F2FE' },
   categoriasDefault: ['Útiles Escolares', 'Oficina', 'Arte y Manualidades', 'Regalos y Detalles'],
   etiquetasCategoria: {
@@ -279,6 +280,7 @@ PLANTILLAS_GIRO.minimarket = crearPlantillaDesdeBaseGeneral({
   cartaTitulo: 'Catálogo Minimarket',
   icono: 'bi-basket2-fill',
   descripcionFooter: 'Minimarket completo con entrega ágil y pedido directo por WhatsApp.',
+  heroImagen: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1920&q=80',
   colores: { primario: '#047857', secundario: '#064E3B', acento: '#F97316', acentoHover: '#EA580C', fondoSuave: '#ECFDF5' },
   categoriasDefault: ['Abarrotes', 'Bebidas', 'Snacks', 'Limpieza y Hogar', 'Lácteos'],
   etiquetasCategoria: {
@@ -419,6 +421,84 @@ const safeImgUrl = (url, fallback) => {
   return /^https?:\/\//i.test(s) ? s : fallback;
 };
 
+const HERO_FOCOS_PERMITIDOS = new Set([
+  'center',
+  'top',
+  'bottom',
+  'left',
+  'right',
+  'left top',
+  'right top',
+  'left bottom',
+  'right bottom'
+]);
+
+const GIROS_FUENTE_SANS = new Set([
+  'botica',
+  'ferreteria',
+  'libreria',
+  'minimarket',
+  'veterinaria',
+  'taller',
+  'general'
+]);
+
+function obtenerFuenteGiro(claveGiro) {
+  const clave = String(claveGiro || '').trim().toLowerCase();
+  return GIROS_FUENTE_SANS.has(clave)
+    ? "'Plus Jakarta Sans', sans-serif"
+    : "'Playfair Display', serif";
+}
+
+function normalizarHeroFoco(val) {
+  const s = String(val || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return HERO_FOCOS_PERMITIDOS.has(s) ? s : 'center';
+}
+
+function normalizarHeroOverlay(val) {
+  if (val === null || val === undefined || val === '') return 40;
+  const num = Number(val);
+  if (!Number.isFinite(num)) return 40;
+  return Math.min(80, Math.max(0, Math.round(num)));
+}
+
+function esUrlBucketNegociosMedia(url, negocioId = null) {
+  const raw = String(url || '').trim();
+  if (!raw || raw.length > 500 || !/^https:\/\//i.test(raw) || raw.includes('..')) {
+    return false;
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:') return false;
+    const baseSupa = window.SUPABASE_URL ? new URL(window.SUPABASE_URL) : null;
+    if (!baseSupa || parsed.origin !== baseSupa.origin) return false;
+    const prefix = '/storage/v1/object/public/negocios-media/';
+    if (!parsed.pathname.startsWith(prefix)) return false;
+    const objectPath = decodeURIComponent(parsed.pathname.slice(prefix.length));
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/portada-[0-9]+\.(webp|jpg|jpeg|png)$/i.test(objectPath)) {
+      return false;
+    }
+    if (negocioId) {
+      const folder = objectPath.split('/')[0].toLowerCase();
+      if (folder !== String(negocioId).trim().toLowerCase()) return false;
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function esUrlImagenKitVerificada(url) {
+  const raw = String(url || '').trim();
+  if (!raw || raw.length > 500 || !/^https:\/\//i.test(raw)) return false;
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
 function obtenerPlantillaGiro(tipoNegocio) {
   const clave = String(tipoNegocio || '').trim().toLowerCase();
   return Object.prototype.hasOwnProperty.call(PLANTILLAS_GIRO, clave)
@@ -433,6 +513,74 @@ function normalizarHexColor(val) {
     return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`;
   }
   return '';
+}
+
+function hexToRgbObj(hex) {
+  const norm = normalizarHexColor(hex) || '#1B4D3E';
+  return {
+    r: parseInt(norm.slice(1, 3), 16),
+    g: parseInt(norm.slice(3, 5), 16),
+    b: parseInt(norm.slice(5, 7), 16)
+  };
+}
+
+function calcularLuminanciaRelativaRgb({ r, g, b }) {
+  const toLinear = (c) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function calcularRatioContrasteRgb(rgbA, rgbB) {
+  const lumA = calcularLuminanciaRelativaRgb(rgbA);
+  const lumB = calcularLuminanciaRelativaRgb(rgbB);
+  const brightest = Math.max(lumA, lumB);
+  const darkest = Math.min(lumA, lumB);
+  return (brightest + 0.05) / (darkest + 0.05);
+}
+
+function mezclarRgbConOverlayOscuro(rgbBase, overlayPct) {
+  const alpha = Math.min(0.80, Math.max(0, Number(overlayPct || 0) / 100));
+  const overlayRgb = { r: 10, g: 15, b: 13 };
+  return {
+    r: Math.round(rgbBase.r * (1 - alpha) + overlayRgb.r * alpha),
+    g: Math.round(rgbBase.g * (1 - alpha) + overlayRgb.g * alpha),
+    b: Math.round(rgbBase.b * (1 - alpha) + overlayRgb.b * alpha)
+  };
+}
+
+function aplicarContrastePortada(colorPrimarioHex, colorSecundarioHex, overlayPct, tieneImagenActiva) {
+  if (!document.documentElement) return;
+  const root = document.documentElement.style;
+  const rgbPrimario = hexToRgbObj(colorPrimarioHex);
+  const rgbSecundario = hexToRgbObj(colorSecundarioHex);
+  const rgbBlanco = { r: 255, g: 255, b: 255 };
+  const rgbOscuro = { r: 17, g: 24, b: 39 };
+
+  // Si hay foto y el overlay es >= 25%, el filtro oscuro garantiza lectura óptima en texto blanco.
+  // Si no hay foto (fondo sólido del kit) o el overlay es muy bajo sobre un color primario muy claro,
+  // se evalúa el contraste real del fondo resultante frente a blanco (#FFFFFF) y oscuro (#111827).
+  const rgbFondoEfectivo = mezclarRgbConOverlayOscuro(rgbPrimario, overlayPct);
+  const contrasteBlanco = calcularRatioContrasteRgb(rgbFondoEfectivo, rgbBlanco);
+  const contrasteOscuro = calcularRatioContrasteRgb(rgbFondoEfectivo, rgbOscuro);
+
+  const usarTextoOscuro = (!tieneImagenActiva && contrasteOscuro > contrasteBlanco) ||
+    (tieneImagenActiva && overlayPct < 20 && contrasteOscuro > contrasteBlanco + 1.5);
+
+  if (usarTextoOscuro) {
+    root.setProperty('--hero-text-color', '#111827');
+    root.setProperty('--hero-subtext-color', 'rgba(17, 24, 39, 0.88)');
+    root.setProperty('--hero-text-shadow', '0 1px 10px rgba(255, 255, 255, 0.55)');
+  } else {
+    root.setProperty('--hero-text-color', '#ffffff');
+    root.setProperty('--hero-subtext-color', 'rgba(255, 255, 255, 0.92)');
+    root.setProperty('--hero-text-shadow', '0 2px 16px rgba(0, 0, 0, 0.52)');
+  }
+
+  const btnContrasteBlanco = calcularRatioContrasteRgb(rgbSecundario, rgbBlanco);
+  const btnContrasteOscuro = calcularRatioContrasteRgb(rgbSecundario, rgbOscuro);
+  root.setProperty('--hero-btn-text-color', btnContrasteOscuro > btnContrasteBlanco + 0.6 ? '#111827' : '#ffffff');
 }
 
 function oscurecerHex(hex, factor = 0.2) {
@@ -465,11 +613,15 @@ function aplicarTemaVisual(plantilla) {
   root.setProperty('--verde-oscuro', c.secundario);
   root.setProperty('--dorado-pan', c.acento);
   root.setProperty('--dorado-hover', c.acentoHover || c.acento);
+  root.setProperty('--fuente-titulo', obtenerFuenteGiro(plantilla.clave));
+  root.setProperty('--hero-foco', 'center');
+  root.setProperty('--hero-overlay-alpha', '0.40');
   if (c.fondoSuave) root.setProperty('--crema-fondo', c.fondoSuave);
   if (c.fondoClaro) root.setProperty('--crema-claro', c.fondoClaro);
   root.setProperty('--hero-overlay-inicio', hexToRgba(c.secundario, 0.62));
   root.setProperty('--hero-overlay-fin', hexToRgba(c.secundario, 0.84));
   root.setProperty('--hero-badge-bg', hexToRgba(c.acento, 0.28));
+  aplicarContrastePortada(c.primario, c.acento, 40, Boolean(plantilla.heroImagen));
 
   const metaTheme = $('#metaThemeColor');
   if (metaTheme) metaTheme.setAttribute('content', c.primario);
@@ -536,7 +688,7 @@ async function initTenant() {
 
   let consulta = supabaseClient
     .from('negocios')
-    .select('id, nombre, slug, whatsapp, logo_url, tipo_negocio, direccion, google_maps_url, hero_imagen_url, hero_titulo_custom, color_primario, color_secundario, activo')
+    .select('*')
     .eq('slug', slugActual)
     .eq('activo', true);
 
@@ -711,33 +863,45 @@ function mostrarTiendaNoDisponible(slug, motivo = 'no-disponible') {
 // HIDRATACIÓN DINÁMICA DEL DOM (PLANTILLA DE GIRO, MARCA, LOGO Y CONTACTO)
 // =============================================================================
 function obtenerCategoriasCatalogo(productos, plantilla) {
-  const sugeridas = Array.isArray(plantilla?.categoriasDefault) ? plantilla.categoriasDefault : [];
-  const reales = [];
-  const vistos = new Set();
+  // 5.1: categoriasDefault del kit NO se siembra en la tienda pública;
+  // solo se muestran las categorías reales que existen en los productos del negocio.
+  if (!productos || productos.length === 0) {
+    return [];
+  }
 
-  const agregarUnica = (cat) => {
-    const limpia = String(cat || '').trim();
+  const sugeridas = Array.isArray(plantilla?.categoriasDefault) ? plantilla.categoriasDefault : [];
+  const existentesMap = new Map();
+
+  productos.forEach(p => {
+    const limpia = String(p?.categoria || '').trim();
     if (!limpia) return;
     const key = limpia.toLowerCase();
-    if (vistos.has(key)) return;
-    vistos.add(key);
-    reales.push(limpia);
-  };
+    if (!existentesMap.has(key)) {
+      existentesMap.set(key, limpia);
+    }
+  });
 
-  if (!productos || productos.length === 0) {
-    sugeridas.forEach(agregarUnica);
-    return reales;
+  const resultado = [];
+  const incluidos = new Set();
+
+  // Respetar el orden tradicional del giro para las categorías que sí tienen productos reales
+  sugeridas.forEach(catSug => {
+    const key = String(catSug || '').trim().toLowerCase();
+    if (key && existentesMap.has(key) && !incluidos.has(key)) {
+      incluidos.add(key);
+      resultado.push(existentesMap.get(key));
+    }
+  });
+
+  // Agregar cualquier categoría personalizada creada por el dueño
+  for (const [key, nombreCat] of existentesMap.entries()) {
+    if (!incluidos.has(key)) {
+      incluidos.add(key);
+      resultado.push(nombreCat);
+    }
   }
 
-  if (plantilla.clave === 'panaderia') {
-    sugeridas.forEach(agregarUnica);
-    productos.forEach(p => agregarUnica(p.categoria));
-  } else {
-    productos.forEach(p => agregarUnica(p.categoria));
-    sugeridas.forEach(agregarUnica);
-  }
-
-  return reales;
+  return resultado;
 }
 
 function obtenerEtiquetaCategoria(categoria, plantilla) {
@@ -878,20 +1042,110 @@ function renderUbicacion(negocio, waUrl) {
   `;
 }
 
+function aplicarPortadaHero(negocio, plantilla) {
+  const root = document.documentElement ? document.documentElement.style : null;
+  const heroBg = $('#heroImagenFondo');
+  const heroImg = $('#heroImagenElemento');
+  const colorPrimarioEfectivo = normalizarHexColor(negocio?.color_primario) || plantilla.colores.primario;
+  const colorSecundarioEfectivo = normalizarHexColor(negocio?.color_secundario) || plantilla.colores.acento;
+  const foco = normalizarHeroFoco(negocio?.hero_foco);
+  const overlayPct = normalizarHeroOverlay(negocio?.hero_overlay);
+  const overlayAlpha = (overlayPct / 100).toFixed(2);
+
+  if (root) {
+    root.setProperty('--hero-foco', foco);
+    root.setProperty('--hero-overlay-alpha', overlayAlpha);
+  }
+
+  if (heroBg) {
+    heroBg.style.backgroundImage = 'none';
+    heroBg.style.backgroundColor = colorPrimarioEfectivo;
+  }
+
+  // Prioridad 5.1:
+  // 1) negocios.hero_imagen_url (foto del dueño validada contra el bucket negocios-media del proyecto)
+  // 2) heroImagen del kit del giro (si existe y fue verificada)
+  // 3) fondo de color sólido del kit (sin emojis ni degradados llamativos)
+  const urlDueno = esUrlBucketNegociosMedia(negocio?.hero_imagen_url, negocio?.id)
+    ? String(negocio.hero_imagen_url).trim()
+    : '';
+  const urlKit = esUrlImagenKitVerificada(plantilla?.heroImagen)
+    ? String(plantilla.heroImagen).trim()
+    : '';
+
+  if (!heroImg) {
+    aplicarContrastePortada(colorPrimarioEfectivo, colorSecundarioEfectivo, overlayPct, false);
+    return;
+  }
+
+  heroImg.style.objectFit = 'cover';
+  heroImg.style.objectPosition = foco;
+  heroImg.alt = String(negocio?.nombre || 'Portada de la tienda');
+
+  const activarFondoColorKit = () => {
+    heroImg.onerror = null;
+    heroImg.onload = null;
+    heroImg.classList.add('d-none');
+    heroImg.removeAttribute('src');
+    aplicarContrastePortada(colorPrimarioEfectivo, colorSecundarioEfectivo, overlayPct, false);
+  };
+
+  const activarImagenKit = () => {
+    if (!urlKit) {
+      activarFondoColorKit();
+      return;
+    }
+    heroImg.onerror = () => activarFondoColorKit();
+    heroImg.onload = () => {
+      heroImg.classList.remove('d-none');
+      aplicarContrastePortada(colorPrimarioEfectivo, colorSecundarioEfectivo, overlayPct, true);
+    };
+    heroImg.classList.remove('d-none');
+    heroImg.src = urlKit;
+    aplicarContrastePortada(colorPrimarioEfectivo, colorSecundarioEfectivo, overlayPct, true);
+  };
+
+  if (urlDueno) {
+    heroImg.onerror = () => activarImagenKit();
+    heroImg.onload = () => {
+      heroImg.classList.remove('d-none');
+      aplicarContrastePortada(colorPrimarioEfectivo, colorSecundarioEfectivo, overlayPct, true);
+    };
+    heroImg.classList.remove('d-none');
+    heroImg.src = urlDueno;
+    aplicarContrastePortada(colorPrimarioEfectivo, colorSecundarioEfectivo, overlayPct, true);
+  } else if (urlKit) {
+    activarImagenKit();
+  } else {
+    activarFondoColorKit();
+  }
+}
+
 function aplicarCustomOverrides(negocio) {
   if (!negocio || !document.documentElement) return;
   const root = document.documentElement.style;
+  const plantilla = window.plantillaActual || obtenerPlantillaGiro(negocio.tipo_negocio);
   const logoBadge = $('#navbarLogoBadge') || $('.logo-badge-circle');
   const heroEmblemVisual = $('#heroEmblemVisual');
 
-  // 1. Sobrescritura de Logo en Header y Emblema del Hero
+  // 1. Sobrescritura de Logo en Header y Emblema del Hero (sin usar innerHTML con la URL)
   const customLogo = String(negocio.logo_url || '').trim() ? safeImgUrl(negocio.logo_url, '') : '';
   if (customLogo) {
     if (logoBadge) {
-      logoBadge.innerHTML = `<img src="${escHtml(customLogo)}" alt="${escHtml(negocio.nombre)}" style="width: 38px; height: 38px; object-fit: contain; border-radius: 50%;">`;
+      logoBadge.textContent = '';
+      const imgNav = document.createElement('img');
+      imgNav.src = customLogo;
+      imgNav.alt = String(negocio.nombre || '');
+      imgNav.style.cssText = 'width: 38px; height: 38px; object-fit: contain; border-radius: 50%;';
+      logoBadge.appendChild(imgNav);
     }
     if (heroEmblemVisual) {
-      heroEmblemVisual.innerHTML = `<img src="${escHtml(customLogo)}" alt="${escHtml(negocio.nombre)}" style="width: 58px; height: 58px; object-fit: contain; border-radius: 50%; margin-bottom: 4px;">`;
+      heroEmblemVisual.textContent = '';
+      const imgHeroLogo = document.createElement('img');
+      imgHeroLogo.src = customLogo;
+      imgHeroLogo.alt = String(negocio.nombre || '');
+      imgHeroLogo.style.cssText = 'width: 58px; height: 58px; object-fit: contain; border-radius: 50%; margin-bottom: 4px;';
+      heroEmblemVisual.appendChild(imgHeroLogo);
     }
   }
 
@@ -917,20 +1171,19 @@ function aplicarCustomOverrides(negocio) {
     root.setProperty('--hero-badge-bg', hexToRgba(customSecundario, 0.28));
   }
 
-  // 4. Sobrescritura de Imagen de Portada (Hero)
-  const customHeroImg = String(negocio.hero_imagen_url || '').trim()
-    ? safeImgUrl(negocio.hero_imagen_url, '')
-    : '';
-  const heroBg = $('#heroImagenFondo');
-  if (customHeroImg && heroBg) {
-    const safeCssHeroUrl = customHeroImg.replace(/['"()\\]/g, encodeURIComponent);
-    heroBg.style.backgroundImage = `linear-gradient(var(--hero-overlay-inicio), var(--hero-overlay-fin)), url('${safeCssHeroUrl}')`;
-  }
+  // 4. Prioridad de Portada (1: hero_imagen_url del dueño -> 2: heroImagen del kit -> 3: fondo color del kit)
+  aplicarPortadaHero(negocio, plantilla);
 
   // 5. Sobrescritura de Título del Hero
   const customTitulo = String(negocio.hero_titulo_custom || '').trim();
   if (customTitulo && $('#heroTitulo')) {
-    $('#heroTitulo').textContent = customTitulo;
+    $('#heroTitulo').textContent = customTitulo.slice(0, 140);
+  }
+
+  // 6. Sobrescritura de Subtítulo del Hero
+  const customSubtitulo = String(negocio.hero_subtitulo_custom || '').trim();
+  if (customSubtitulo && $('#heroSubtitulo')) {
+    $('#heroSubtitulo').textContent = customSubtitulo.slice(0, 160);
   }
 }
 
@@ -946,10 +1199,11 @@ function hidratarDOM(negocio) {
   aplicarTemaVisual(plantilla);
 
   // 1. Título y meta descripción de la pestaña
+  const subtituloMeta = String(negocio.hero_subtitulo_custom || '').trim() || plantilla.subtitulo;
   document.title = `${negocio.nombre} - Catálogo Online`;
   const metaDesc = $('meta[name="description"]');
   if (metaDesc) {
-    metaDesc.setAttribute('content', `${negocio.nombre} - ${plantilla.subtitulo}`);
+    metaDesc.setAttribute('content', `${negocio.nombre} - ${subtituloMeta}`);
   }
 
   // 2. Nombre de la marca y subtítulo en Navbar
@@ -971,11 +1225,6 @@ function hidratarDOM(negocio) {
   }
 
   // 4. Hidratación base del Hero (sin parpadeo)
-  const heroBg = $('#heroImagenFondo');
-  if (heroBg) {
-    heroBg.style.backgroundImage = `linear-gradient(var(--hero-overlay-inicio), var(--hero-overlay-fin)), url('${plantilla.heroImagen}')`;
-  }
-
   const heroEmblemTitle = $('.hero-logo-emblem .emblem-title');
   if (heroEmblemTitle) heroEmblemTitle.textContent = negocio.nombre;
   const heroEmblemSub = $('#heroEmblemSub');
@@ -983,7 +1232,7 @@ function hidratarDOM(negocio) {
 
   const heroBadge = $('#heroBadge');
   if (heroBadge) {
-    heroBadge.innerHTML = `<i class="bi ${escHtml(plantilla.badgeIcon)} text-warning me-1"></i> ${escHtml(plantilla.badge)}`;
+    heroBadge.innerHTML = `<i class="bi ${escHtml(plantilla.badgeIcon)} me-1"></i> ${escHtml(plantilla.badge)}`;
   }
 
   const heroTitulo = $('#heroTitulo');
@@ -1006,10 +1255,10 @@ function hidratarDOM(negocio) {
   const heroSection = $('#inicio');
   if (heroSection) heroSection.classList.add('is-hydrated');
 
-  // 5. Encabezado del catálogo y pestañas iniciales desde categoriasDefault
+  // 5. Encabezado del catálogo (sin sembrar categoriasDefault; las pestañas se generan de los productos reales)
   if ($('#cartaSubtitulo')) $('#cartaSubtitulo').textContent = plantilla.cartaSubtitulo;
   if ($('#cartaTitulo')) $('#cartaTitulo').textContent = plantilla.cartaTitulo;
-  renderCategoryPills(plantilla.categoriasDefault, plantilla);
+  renderCategoryPills([], plantilla);
 
   // 6. Configuración dinámica de enlaces, Top Bar, Footer y WhatsApp
   const rawPhone = negocio.whatsapp || window.WHATSAPP_NUMBER || '51926549398';
@@ -1103,18 +1352,38 @@ function hidratarDOM(negocio) {
 // =============================================================================
 // CARGA DE PRODUCTOS Y RENDERIZADO DINÁMICO POR PLANTILLA DE GIRO
 // =============================================================================
-function crearTarjetaProductoHtml(prod, imgFallback) {
-  const imgUrl = safeImgUrl(prod.imagen_url, imgFallback);
+function obtenerSvgPlaceholderProducto(size = 28) {
+  return `<svg class="product-placeholder-svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>`;
+}
+
+function crearPlaceholderProductoHtml(prod, plantilla) {
+  const etiqueta = escHtml(prod?.categoria || window.negocioActual?.nombre || 'Catálogo');
+  const svgIcono = plantilla?.usaHornoSvg
+    ? '<svg class="product-placeholder-svg" width="34" height="22" aria-hidden="true"><use href="#horno-don-roberto"></use></svg>'
+    : obtenerSvgPlaceholderProducto(28);
+  return `
+    <div class="product-img-placeholder" aria-hidden="true">
+      <div class="product-img-placeholder-circle">
+        ${svgIcono}
+      </div>
+      <span class="product-img-placeholder-label">${etiqueta}</span>
+    </div>
+  `;
+}
+
+function crearTarjetaProductoHtml(prod, plantilla) {
+  const imgUrl = safeImgUrl(prod.imagen_url, '');
   const categoriaBadge = prod.categoria
     ? `<span class="badge-floating">${escHtml(prod.categoria)}</span>`
     : '';
+  const placeholderHtml = crearPlaceholderProductoHtml(prod, plantilla);
 
   return `
     <div class="col-sm-6 col-lg-3">
       <div class="product-card">
-        <div class="product-img-wrapper">
+        <div class="product-img-wrapper" data-prod-img-wrap="${escHtml(prod.id)}">
           ${categoriaBadge}
-          <img src="${escHtml(imgUrl)}" alt="${escHtml(prod.nombre)}" onerror="this.onerror=null;this.src='${escHtml(imgFallback)}';">
+          ${placeholderHtml}
         </div>
         <div class="product-body">
           <div>
@@ -1131,12 +1400,37 @@ function crearTarjetaProductoHtml(prod, imgFallback) {
   `;
 }
 
+function hidratarImagenesProductos(container) {
+  if (!container) return;
+  $$('[data-prod-img-wrap]', container).forEach(wrap => {
+    const prodId = wrap.getAttribute('data-prod-img-wrap');
+    const prod = catalogoProductos.find(p => String(p.id) === String(prodId));
+    const url = prod ? safeImgUrl(prod.imagen_url, '') : '';
+    if (!url) return;
+
+    const placeholder = wrap.querySelector('.product-img-placeholder');
+    const img = document.createElement('img');
+    img.alt = String(prod?.nombre || 'Producto');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.onload = () => {
+      if (placeholder) placeholder.classList.add('d-none');
+    };
+    img.onerror = () => {
+      img.remove();
+      if (placeholder) placeholder.classList.remove('d-none');
+    };
+    if (placeholder) placeholder.classList.add('d-none');
+    img.src = url;
+    wrap.appendChild(img);
+  });
+}
+
 function renderCatalogo() {
   const container = $('#catalogSectionsContainer');
   if (!container) return;
 
   const plantilla = window.plantillaActual || PLANTILLAS_GIRO.general;
-  const imgFallback = plantilla.imagenProductoFallback;
   const q = textoBusquedaCatalogo.trim().toLowerCase();
 
   const filtrados = catalogoProductos.filter(prod => {
@@ -1180,7 +1474,7 @@ function renderCatalogo() {
           <h3 class="h3 fw-bold mb-1" style="color: var(--verde-bosque);">${escHtml(obtenerEtiquetaCategoria(g.categoria, plantilla))}</h3>
         </div>
         <div class="row g-4 mb-5">
-          ${g.items.map(p => crearTarjetaProductoHtml(p, imgFallback)).join('')}
+          ${g.items.map(p => crearTarjetaProductoHtml(p, plantilla)).join('')}
         </div>
       </div>
     `).join('');
@@ -1191,11 +1485,13 @@ function renderCatalogo() {
           <h3 class="h3 fw-bold mb-1" style="color: var(--verde-bosque);">${escHtml(obtenerEtiquetaCategoria(categoriaActiva, plantilla))}</h3>
         </div>
         <div class="row g-4 mb-5">
-          ${filtrados.map(p => crearTarjetaProductoHtml(p, imgFallback)).join('')}
+          ${filtrados.map(p => crearTarjetaProductoHtml(p, plantilla)).join('')}
         </div>
       </div>
     `;
   }
+
+  hidratarImagenesProductos(container);
 
   $$('.btn-add-cart', container).forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1205,14 +1501,14 @@ function renderCatalogo() {
           id: String(prodObj.id),
           name: prodObj.nombre,
           price: Number(prodObj.precio),
-          img: safeImgUrl(prodObj.imagen_url, imgFallback)
+          img: safeImgUrl(prodObj.imagen_url, '')
         });
       } else {
         addToCart({
           id: btn.dataset.id,
           name: btn.dataset.name,
           price: parseFloat(btn.dataset.price),
-          img: btn.dataset.img
+          img: safeImgUrl(btn.dataset.img, '')
         });
       }
     });
@@ -1287,22 +1583,40 @@ function renderCart() {
   if (!container) return;
   if (!cart.length) { container.innerHTML = ''; empty.style.display = 'block'; footer.style.display = 'none'; return; }
   empty.style.display = 'none'; footer.style.display = 'block';
-  container.innerHTML = cart.map((item) => `
+  const svgThumb = obtenerSvgPlaceholderProducto(22);
+  container.innerHTML = cart.map((item, idx) => `
     <div class="cart-item">
-      <img src="${item.img}" alt="${item.name}" class="cart-item-img">
+      <div class="cart-item-thumb-wrap" data-cart-thumb-idx="${idx}">
+        <div class="cart-item-placeholder">${svgThumb}</div>
+      </div>
       <div class="cart-item-info">
-        <div class="cart-item-name">${item.name}</div>
+        <div class="cart-item-name">${escHtml(item.name)}</div>
         <div class="cart-item-price">${formatPrice(item.price)}</div>
         <div class="qty-control">
-          <button class="qty-btn" data-action="dec" data-id="${item.id}">−</button>
-          <span class="qty-value">${item.qty}</span>
-          <button class="qty-btn" data-action="inc" data-id="${item.id}">+</button>
-          <button class="btn-remove-item ms-auto" data-action="remove" data-id="${item.id}"><i class="bi bi-trash"></i></button>
+          <button class="qty-btn" data-action="dec" data-id="${escHtml(item.id)}">−</button>
+          <span class="qty-value">${escHtml(item.qty)}</span>
+          <button class="qty-btn" data-action="inc" data-id="${escHtml(item.id)}">+</button>
+          <button class="btn-remove-item ms-auto" data-action="remove" data-id="${escHtml(item.id)}"><i class="bi bi-trash"></i></button>
         </div>
       </div>
       <div class="fw-bold" style="color: var(--verde-bosque);">${formatPrice(item.price * item.qty)}</div>
     </div>
   `).join('');
+  $$('[data-cart-thumb-idx]', container).forEach(wrap => {
+    const idx = Number(wrap.getAttribute('data-cart-thumb-idx'));
+    const item = cart[idx];
+    const url = item ? safeImgUrl(item.img, '') : '';
+    if (!url) return;
+    const ph = wrap.querySelector('.cart-item-placeholder');
+    const img = document.createElement('img');
+    img.className = 'cart-item-img';
+    img.alt = String(item.name || 'Producto');
+    img.onload = () => { if (ph) ph.classList.add('d-none'); };
+    img.onerror = () => { img.remove(); if (ph) ph.classList.remove('d-none'); };
+    if (ph) ph.classList.add('d-none');
+    img.src = url;
+    wrap.appendChild(img);
+  });
   $('#cartSubtotal').textContent = formatPrice(getCartTotal());
   $$('.qty-btn', container).forEach((btn) => btn.addEventListener('click', () => updateQty(btn.dataset.id, btn.dataset.action === 'inc' ? 1 : -1)));
   $$('.btn-remove-item', container).forEach((btn) => btn.addEventListener('click', () => removeItem(btn.dataset.id)));

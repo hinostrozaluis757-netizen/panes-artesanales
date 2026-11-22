@@ -163,6 +163,13 @@ let procesandoVentaExpress = false;
 let pagosSqlFaltanteAdmin = false;
 let guardandoPagosAdmin = false;
 
+// Variables de estado del módulo Diseño de mi tienda (PASO 5)
+let guardandoDisenoAdmin = false;
+let procesandoImagenDiseno = false;
+let portadaProcesadaPendiente = null; // { blob, ext, mime, width, height, bytes, previewUrl }
+let portadaMarcadaParaQuitar = false;
+let categoriasSesionAdmin = new Set();
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 const fmt = (n) => `S/ ${Number(n || 0).toFixed(2)}`;
@@ -198,52 +205,103 @@ function sincronizarCategoriasAdmin(extraCategoria = null) {
     titleEl.textContent = cfg.tituloProductos || 'Gestión de Productos';
   }
 
-  const mapa = new Map();
+  // 5.1: categoriasDefault del kit NO se siembra como categorías existentes;
+  // en los filtros de la tabla solo aparecen las categorías reales de los productos del negocio.
+  const mapaReales = new Map();
+  const mapaLabelsGiro = new Map();
   (cfg.categorias || []).forEach(c => {
     const val = String(c.value || '').trim();
-    if (val) mapa.set(val.toLowerCase(), { value: val, label: c.label || val });
+    if (val) mapaLabelsGiro.set(val.toLowerCase(), { value: val, label: c.label || val });
   });
 
   (allProducts || []).forEach(p => {
     const val = String(p.categoria || '').trim();
-    if (val && !mapa.has(val.toLowerCase())) {
-      mapa.set(val.toLowerCase(), { value: val, label: val });
+    if (!val) return;
+    const key = val.toLowerCase();
+    if (!mapaReales.has(key)) {
+      const giroMatch = mapaLabelsGiro.get(key);
+      mapaReales.set(key, { value: val, label: giroMatch ? giroMatch.label : val });
+    }
+  });
+
+  categoriasSesionAdmin.forEach(catSesion => {
+    const val = String(catSesion || '').trim();
+    if (!val) return;
+    const key = val.toLowerCase();
+    if (!mapaReales.has(key)) {
+      const giroMatch = mapaLabelsGiro.get(key);
+      mapaReales.set(key, { value: val, label: giroMatch ? giroMatch.label : val });
     }
   });
 
   if (extraCategoria) {
     const val = String(extraCategoria).trim();
-    if (val && !mapa.has(val.toLowerCase())) {
-      mapa.set(val.toLowerCase(), { value: val, label: val });
+    if (val) {
+      categoriasSesionAdmin.add(val);
+      const key = val.toLowerCase();
+      if (!mapaReales.has(key)) {
+        const giroMatch = mapaLabelsGiro.get(key);
+        mapaReales.set(key, { value: val, label: giroMatch ? giroMatch.label : val });
+      }
     }
   }
 
-  const listaCategorias = [...mapa.values()];
+  const listaReales = [...mapaReales.values()];
 
   const filterEl = $('#adminCategoryFilter');
   if (filterEl) {
-    const existeActual = currentAdminCategory === 'Todos' || listaCategorias.some(c => c.value === currentAdminCategory);
+    const existeActual = currentAdminCategory === 'Todos' || listaReales.some(c => c.value === currentAdminCategory);
     if (!existeActual) currentAdminCategory = 'Todos';
 
     filterEl.innerHTML = [
       `<button type="button" class="btn btn-outline-secondary ${currentAdminCategory === 'Todos' ? 'active' : ''}" data-filter="Todos">Todos</button>`,
-      ...listaCategorias.map(c =>
+      ...listaReales.map(c =>
         `<button type="button" class="btn btn-outline-secondary ${currentAdminCategory === c.value ? 'active' : ''}" data-filter="${esc(c.value)}">${esc(c.label)}</button>`
       )
     ].join('');
   }
 
+  // En el selector del formulario (#pCat): mostrar las categorías existentes del negocio
+  // (o un placeholder si aún no tiene ninguna creada para que elija de las sugerencias o escriba una).
   const selectEl = $('#pCat');
   if (selectEl) {
     const prevValue = extraCategoria ? String(extraCategoria).trim() : selectEl.value;
-    selectEl.innerHTML = listaCategorias
-      .map(c => `<option value="${esc(c.value)}">${esc(c.value)}</option>`)
-      .join('');
-    if (prevValue && listaCategorias.some(c => c.value === prevValue)) {
-      selectEl.value = prevValue;
-    } else if (listaCategorias.length > 0) {
-      selectEl.value = listaCategorias[0].value;
+    if (listaReales.length > 0) {
+      selectEl.innerHTML = listaReales
+        .map(c => `<option value="${esc(c.value)}">${esc(c.value)}</option>`)
+        .join('');
+      if (prevValue && listaReales.some(c => c.value.toLowerCase() === prevValue.toLowerCase())) {
+        const match = listaReales.find(c => c.value.toLowerCase() === prevValue.toLowerCase());
+        selectEl.value = match.value;
+      } else {
+        selectEl.value = listaReales[0].value;
+      }
+    } else {
+      selectEl.innerHTML = '<option value="">Selecciona una sugerencia o escribe una categoría...</option>';
+      selectEl.value = '';
     }
+  }
+
+  // 5.1: Mostrar categoriasDefault del kit como sugerencias interactivas cuando el dueño crea una categoría
+  const sugContainer = $('#pCatSugerenciasGiro');
+  if (sugContainer) {
+    const catActivaForm = selectEl ? String(selectEl.value || '').trim().toLowerCase() : '';
+    sugContainer.innerHTML = (cfg.categorias || []).map(c => {
+      const val = String(c.value || '').trim();
+      const activa = val.toLowerCase() === catActivaForm;
+      const btnCls = activa
+        ? 'btn btn-sm btn-success rounded-pill py-0 px-2 small btn-sug-cat-giro'
+        : 'btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 small btn-sug-cat-giro';
+      return `<button type="button" class="${btnCls}" data-cat="${esc(val)}">+ ${esc(val)}</button>`;
+    }).join('');
+
+    $$('#pCatSugerenciasGiro .btn-sug-cat-giro').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const catElegida = String(btn.dataset.cat || '').trim();
+        if (!catElegida) return;
+        sincronizarCategoriasAdmin(catElegida);
+      });
+    });
   }
 }
 
@@ -283,6 +341,11 @@ function resetearEstadoAdmin() {
 
   pagosSqlFaltanteAdmin = false;
   guardandoPagosAdmin = false;
+  guardandoDisenoAdmin = false;
+  procesandoImagenDiseno = false;
+  portadaMarcadaParaQuitar = false;
+  categoriasSesionAdmin.clear();
+  limpiarPortadaProcesadaPendiente();
 
   if (chartInstance) {
     try { chartInstance.destroy(); } catch (_) {}
@@ -363,10 +426,11 @@ function resetearEstadoAdmin() {
   }
 
   limpiarUiMetodosPagoAdmin();
+  if (typeof limpiarUiDisenoTiendaAdmin === 'function') limpiarUiDisenoTiendaAdmin();
 
   $$('#adminTabs .nav-link').forEach(b => b.classList.toggle('active', b.dataset.target === 'tabPedidos'));
   if ($('#tabPedidos')) $('#tabPedidos').classList.remove('d-none');
-  ['#tabProductos', '#tabCaja', '#tabPOS', '#tabVentaExpress', '#tabUbicacion', '#tabMetodosPago'].forEach(sel => {
+  ['#tabProductos', '#tabCaja', '#tabPOS', '#tabVentaExpress', '#tabUbicacion', '#tabMetodosPago', '#tabDiseno'].forEach(sel => {
     const el = $(sel);
     if (el) el.classList.add('d-none');
   });
@@ -667,9 +731,12 @@ function actualizarIdentidadPanel() {
     }
   }
 
-  // Sincronizar título, categorías del catálogo y formulario de ubicación
+  // Sincronizar título, categorías del catálogo, formulario de ubicación y diseño de tienda
   sincronizarCategoriasAdmin();
   sincronizarFormularioUbicacion();
+  if (typeof sincronizarFormularioDisenoAdmin === 'function') {
+    sincronizarFormularioDisenoAdmin();
+  }
 }
 
 // Suscripción Realtime filtrada estrictamente por negocio_id
@@ -777,6 +844,7 @@ $$('#adminTabs .nav-link').forEach(btn => {
     if ($('#tabVentaExpress')) $('#tabVentaExpress').classList.add('d-none');
     if ($('#tabUbicacion')) $('#tabUbicacion').classList.add('d-none');
     if ($('#tabMetodosPago')) $('#tabMetodosPago').classList.add('d-none');
+    if ($('#tabDiseno')) $('#tabDiseno').classList.add('d-none');
     // Mostrar la seleccionada
     const targetEl = $('#' + target);
     if (targetEl) targetEl.classList.remove('d-none');
@@ -785,6 +853,9 @@ $$('#adminTabs .nav-link').forEach(btn => {
     }
     if (target === 'tabMetodosPago') {
       await cargarMetodosPagoAdmin();
+    }
+    if (target === 'tabDiseno') {
+      sincronizarFormularioDisenoAdmin();
     }
     if (target === 'tabVentaExpress') {
       await cargarProductosExpress();
@@ -1019,6 +1090,12 @@ async function loadProducts() {
 function renderAdminProducts() {
   const filtered = currentAdminCategory === 'Todos' ? allProducts : allProducts.filter(p => p.categoria === currentAdminCategory);
   if (!filtered.length) { $('#productsTable').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No hay productos en esta categoría.</td></tr>'; return; }
+  const kitGiro = typeof obtenerKitDisenoGiroAdmin === 'function'
+    ? obtenerKitDisenoGiroAdmin(window.negocioAdminActual?.tipo_negocio)
+    : { primario: '#1B4D3E' };
+  const colorKit = normalizarHexDisenoAdmin(window.negocioAdminActual?.color_primario) || kitGiro.primario;
+  const svgPlaceholder = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>';
+
   $('#productsTable').innerHTML = filtered.map(p => {
     const stockVal = Number(p.stock ?? 0);
     const stockBadge = stockVal <= 0
@@ -1029,10 +1106,11 @@ function renderAdminProducts() {
     const qrHtml = p.codigo_qr
       ? `<code class="small bg-light px-2 py-1 rounded border text-dark">${esc(p.codigo_qr)}</code>`
       : '<span class="text-muted small">—</span>';
-    const imgSrc = safeUrl(p.imagen_url) || 'https://via.placeholder.com/50';
     return `
     <tr>
-      <td><img src="${imgSrc}" style="width:50px; height:50px; border-radius:8px; object-fit:cover;"></td>
+      <td data-admin-prod-thumb="${esc(p.id)}">
+        <div class="admin-prod-placeholder" style="background-color: ${esc(colorKit)};">${svgPlaceholder}</div>
+      </td>
       <td><strong>${esc(p.nombre)}</strong></td>
       <td>${fmt(p.precio)}</td>
       <td>${stockBadge}</td>
@@ -1048,6 +1126,24 @@ function renderAdminProducts() {
     </tr>
   `;
   }).join('');
+
+  $$('#productsTable [data-admin-prod-thumb]').forEach(cell => {
+    const prodId = cell.getAttribute('data-admin-prod-thumb');
+    const prod = filtered.find(x => String(x.id) === String(prodId));
+    const rawUrl = prod && /^https:\/\//i.test(String(prod.imagen_url || '').trim())
+      ? String(prod.imagen_url).trim()
+      : '';
+    if (!rawUrl) return;
+    const ph = cell.querySelector('.admin-prod-placeholder');
+    const img = document.createElement('img');
+    img.alt = String(prod?.nombre || 'Producto');
+    img.style.cssText = 'width:50px; height:50px; border-radius:8px; object-fit:cover;';
+    img.onload = () => { if (ph) ph.classList.add('d-none'); };
+    img.onerror = () => { img.remove(); if (ph) ph.classList.remove('d-none'); };
+    if (ph) ph.classList.add('d-none');
+    img.src = rawUrl;
+    cell.appendChild(img);
+  });
 }
 
 if ($('#adminCategoryFilter')) {
@@ -1065,6 +1161,7 @@ window.clearForm = () => {
   editingProduct = null;
   modalProductoDesdePOS = false;
   pendingPosModalFocusId = null;
+  if ($('#pNuevaCategoriaInput')) $('#pNuevaCategoriaInput').value = '';
   sincronizarCategoriasAdmin();
   $('#pId').value = ''; $('#pNombre').value = ''; $('#pDesc').value = ''; $('#pPrecio').value = '';
   if ($('#pCat') && $('#pCat').options.length > 0) $('#pCat').selectedIndex = 0;
@@ -1078,6 +1175,31 @@ window.clearForm = () => {
   $('#pPreview').style.display = 'none';
   $('#modalTitle').textContent = 'Nuevo Producto';
 };
+
+function aplicarNuevaCategoriaDesdeInput() {
+  const inp = $('#pNuevaCategoriaInput');
+  if (!inp) return;
+  const val = String(inp.value || '').trim();
+  if (!val) {
+    toast('Escribe el nombre de la categoría o toca una sugerencia del giro.', 'warning');
+    inp.focus();
+    return;
+  }
+  inp.value = '';
+  sincronizarCategoriasAdmin(val);
+}
+
+if ($('#btnAgregarCategoriaAdmin')) {
+  $('#btnAgregarCategoriaAdmin').addEventListener('click', aplicarNuevaCategoriaDesdeInput);
+}
+if ($('#pNuevaCategoriaInput')) {
+  $('#pNuevaCategoriaInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      aplicarNuevaCategoriaDesdeInput();
+    }
+  });
+}
 
 window.editProduct = (id) => {
   const negocioId = getNegocioActivoId();
@@ -1147,10 +1269,16 @@ $('#btnSaveProduct').addEventListener('click', async () => {
     return alert('El producto no pertenece al negocio activo.');
   }
   const id = $('#pId').value, nombre = $('#pNombre').value.trim(), desc = $('#pDesc').value.trim();
-  const precio = parseFloat($('#pPrecio').value), cat = $('#pCat').value, file = $('#pImagen').files[0];
+  const catInputExtra = String($('#pNuevaCategoriaInput')?.value || '').trim();
+  if (catInputExtra) {
+    sincronizarCategoriasAdmin(catInputExtra);
+    if ($('#pNuevaCategoriaInput')) $('#pNuevaCategoriaInput').value = '';
+  }
+  const precio = parseFloat($('#pPrecio').value), cat = String($('#pCat').value || '').trim(), file = $('#pImagen').files[0];
   const codigo_qr = $('#pCodigoQR') ? ($('#pCodigoQR').value.trim() || null) : null;
   const urlExterna = $('#pImagenUrlExterna') ? $('#pImagenUrlExterna').value.trim() : '';
   if (!nombre || isNaN(precio) || precio < 0) return alert('Nombre y precio válidos obligatorios');
+  if (!cat) return alert('Selecciona una categoría existente, toca una sugerencia del giro o escribe una nueva categoría.');
   const btn = $('#btnSaveProduct'); btn.textContent = 'Guardando...'; btn.disabled = true;
   let imagen_url = editingProduct
     ? editingProduct.imagen_url
@@ -3873,6 +4001,1182 @@ if ($('#btnLimpiarMetodosPago')) {
     mostrarAlertaMetodosPago('Campos limpiados. Pulsa "Guardar Métodos de Pago" para aplicar el cambio en tu tienda.', 'info');
     renderQrPreviewPagos();
   });
+}
+
+// =============================================================================
+// MÓDULO PASO 5: DISEÑO DE MI TIENDA (PORTADA EDITABLE, FOCO, OVERLAY Y COLORES)
+// =============================================================================
+const MAX_PORTADA_INPUT_BYTES = 5 * 1024 * 1024; // 5 MB máximo de entrada
+const MAX_PORTADA_WIDTH_PX = 1600;
+const PORTADA_CALIDAD_COMPRESION = 0.80;
+
+const FOCOS_LABELS_ADMIN = {
+  'left top': 'Arriba izquierda',
+  'top': 'Arriba centro',
+  'right top': 'Arriba derecha',
+  'left': 'Centro izquierda',
+  'center': 'Centro',
+  'right': 'Centro derecha',
+  'left bottom': 'Abajo izquierda',
+  'bottom': 'Abajo centro',
+  'right bottom': 'Abajo derecha'
+};
+
+const KIT_DISENO_GIROS_ADMIN = {
+  panaderia: {
+    primario: '#1B4D3E',
+    secundario: '#D9822B',
+    titulo: 'Tradición en cada camino',
+    subtitulo: 'Especialistas en pancitos artesanales rellenos recién salidos del horno y sánguches a la leña.',
+    badge: 'HORNO DE BARRO TRADICIONAL',
+    textoBtn: 'Ver Carta Completa',
+    icono: 'bi-shop',
+    fuente: "'Playfair Display', serif",
+    heroImagen: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1920&q=80'
+  },
+  botica: {
+    primario: '#0F766E',
+    secundario: '#0284C7',
+    titulo: 'Salud y Bienestar a tu alcance',
+    subtitulo: 'Medicamentos garantizados, vitaminas y productos de cuidado personal con envío seguro a tu hogar.',
+    badge: 'Atención 24/7 • Delivery Rápido',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-capsule',
+    fuente: "'Plus Jakarta Sans', sans-serif",
+    heroImagen: 'https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1920&q=80'
+  },
+  restaurante: {
+    primario: '#991B1B',
+    secundario: '#D97706',
+    titulo: 'El mejor sabor de la ciudad',
+    subtitulo: 'Platos preparados al instante con ingredientes frescos, porciones generosas y envío directo a tu mesa.',
+    badge: 'Cocina al Momento • Delivery Express',
+    textoBtn: 'Ver Carta Completa',
+    icono: 'bi-egg-fried',
+    fuente: "'Playfair Display', serif",
+    heroImagen: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1920&q=80'
+  },
+  ferreteria: {
+    primario: '#1E293B',
+    secundario: '#D97706',
+    titulo: 'Todo para tu obra y hogar',
+    subtitulo: 'Herramientas profesionales, materiales eléctricos, pinturas y acabados con despacho directo a tu proyecto.',
+    badge: 'Stock Garantizado • Asesoría Técnica',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-tools',
+    fuente: "'Plus Jakarta Sans', sans-serif",
+    heroImagen: 'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=1920&q=80'
+  },
+  ropa: {
+    primario: '#18181B',
+    secundario: '#D4AF37',
+    titulo: 'Viste tu mejor versión',
+    subtitulo: 'Prendas exclusivas, cortes actuales y accesorios seleccionados para elevar tu estilo cada día.',
+    badge: 'Nueva Colección • Moda & Estilo',
+    textoBtn: 'Ver Colección',
+    icono: 'bi-handbag-fill',
+    fuente: "'Playfair Display', serif",
+    heroImagen: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1920&q=80'
+  },
+  licoreria: {
+    primario: '#3B0764',
+    secundario: '#F59E0B',
+    titulo: 'Brinda en cada ocasión especial',
+    subtitulo: 'Cervezas bien heladas, vinos seleccionados, destilados y combos listos para tu reunión.',
+    badge: 'Delivery Nocturno • Licores Originales',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-cup-straw',
+    fuente: "'Playfair Display', serif",
+    heroImagen: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&w=1920&q=80'
+  },
+  libreria: {
+    primario: '#0284C7',
+    secundario: '#F59E0B',
+    titulo: 'Todo para estudiar, trabajar y crear',
+    subtitulo: 'Útiles escolares, papelería premium, artículos de oficina y detalles especiales en un solo lugar.',
+    badge: 'Útiles • Oficina • Creatividad',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-book-half',
+    fuente: "'Plus Jakarta Sans', sans-serif",
+    heroImagen: 'https://images.unsplash.com/photo-1456735190827-d1262f71b8a3?auto=format&fit=crop&w=1920&q=80'
+  },
+  minimarket: {
+    primario: '#047857',
+    secundario: '#F97316',
+    titulo: 'Tu compra diaria sin hacer colas',
+    subtitulo: 'Abarrotes, bebidas frías, lácteos, snacks y productos de limpieza directo a tu puerta.',
+    badge: 'Tu Bodega Moderna • Delivery Rápido',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-basket2-fill',
+    fuente: "'Plus Jakarta Sans', sans-serif",
+    heroImagen: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1920&q=80'
+  },
+  cafeteria: {
+    primario: '#4A2C2A',
+    secundario: '#D97706',
+    titulo: 'Un respiro delicioso en tu día',
+    subtitulo: 'Cafés recién pasados, jugos naturales, sánguches y postres artesanales preparados al momento.',
+    badge: 'Café de Especialidad • Postres & Jugos',
+    textoBtn: 'Ver Carta',
+    icono: 'bi-cup-hot-fill',
+    fuente: "'Playfair Display', serif",
+    heroImagen: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=1920&q=80'
+  },
+  veterinaria: {
+    primario: '#0D9488',
+    secundario: '#F97316',
+    titulo: 'Todo para el bienestar de tu engreído',
+    subtitulo: 'Alimento balanceado, farmacia veterinaria, higiene y accesorios para perros y gatos.',
+    badge: 'Amor y Cuidado para tu Mascota',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-heart-pulse-fill',
+    fuente: "'Plus Jakarta Sans', sans-serif",
+    heroImagen: 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?auto=format&fit=crop&w=1920&q=80'
+  },
+  peluqueria: {
+    primario: '#3F1D38',
+    secundario: '#EC4899',
+    titulo: 'Resalta tu mejor estilo hoy',
+    subtitulo: 'Cortes modernos, barbería profesional, tratamientos capilares y productos de cuidado personal.',
+    badge: 'Estilo • Barbería • Belleza',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-scissors',
+    fuente: "'Playfair Display', serif",
+    heroImagen: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&w=1920&q=80'
+  },
+  taller: {
+    primario: '#1E293B',
+    secundario: '#EF4444',
+    titulo: 'Potencia y seguridad para tu vehículo',
+    subtitulo: 'Lubricantes certificados, repuestos, baterías y mantenimiento confiable para autos y motos.',
+    badge: 'Servicio Automotriz • Repuestos',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-wrench-adjustable-circle-fill',
+    fuente: "'Plus Jakarta Sans', sans-serif",
+    heroImagen: 'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?auto=format&fit=crop&w=1920&q=80'
+  },
+  general: {
+    primario: '#4F46E5',
+    secundario: '#F97316',
+    titulo: 'Descubre productos elegidos para ti',
+    subtitulo: 'Explora nuestro catálogo actualizado, arma tu carrito en segundos y confirma tu pedido directo por WhatsApp.',
+    badge: 'Tienda Online • Compra Fácil',
+    textoBtn: 'Ver Catálogo',
+    icono: 'bi-shop',
+    fuente: "'Plus Jakarta Sans', sans-serif",
+    heroImagen: 'https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=1920&q=80'
+  }
+};
+
+function obtenerKitDisenoGiroAdmin(tipoNegocio) {
+  const clave = String(tipoNegocio || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(KIT_DISENO_GIROS_ADMIN, clave)
+    ? KIT_DISENO_GIROS_ADMIN[clave]
+    : KIT_DISENO_GIROS_ADMIN.general;
+}
+
+function normalizarHexDisenoAdmin(val) {
+  const s = String(val || '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(s)) return s.toUpperCase();
+  if (/^#[0-9a-f]{3}$/i.test(s)) {
+    return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`.toUpperCase();
+  }
+  return '';
+}
+
+function normalizarFocoDisenoAdmin(val) {
+  const s = String(val || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return Object.prototype.hasOwnProperty.call(FOCOS_LABELS_ADMIN, s) ? s : 'center';
+}
+
+function normalizarOverlayDisenoAdmin(val) {
+  if (val === null || val === undefined || val === '') return 40;
+  const n = Number(val);
+  if (!Number.isFinite(n)) return 40;
+  return Math.min(80, Math.max(0, Math.round(n)));
+}
+
+function esUrlBucketNegociosMediaAdmin(url, negocioId = null) {
+  const raw = String(url || '').trim();
+  if (!raw || raw.length > 500 || !/^https:\/\//i.test(raw) || raw.includes('..')) {
+    return false;
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:') return false;
+    const baseSupa = window.SUPABASE_URL ? new URL(window.SUPABASE_URL) : null;
+    if (!baseSupa || parsed.origin !== baseSupa.origin) return false;
+    const prefix = '/storage/v1/object/public/negocios-media/';
+    if (!parsed.pathname.startsWith(prefix)) return false;
+    const objectPath = decodeURIComponent(parsed.pathname.slice(prefix.length));
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/portada-[0-9]+\.(webp|jpg|jpeg|png)$/i.test(objectPath)) {
+      return false;
+    }
+    if (negocioId) {
+      const folder = objectPath.split('/')[0].toLowerCase();
+      if (folder !== String(negocioId).trim().toLowerCase()) return false;
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function extraerRutaBucketNegociosMedia(url, negocioId) {
+  if (!esUrlBucketNegociosMediaAdmin(url, negocioId)) return null;
+  try {
+    const parsed = new URL(String(url).trim());
+    const prefix = '/storage/v1/object/public/negocios-media/';
+    const relPath = decodeURIComponent(parsed.pathname.slice(prefix.length));
+    if (!relPath || relPath.includes('..')) return null;
+    return relPath;
+  } catch (_) {
+    return null;
+  }
+}
+
+function limpiarPortadaProcesadaPendiente() {
+  if (portadaProcesadaPendiente && portadaProcesadaPendiente.previewUrl) {
+    try { URL.revokeObjectURL(portadaProcesadaPendiente.previewUrl); } catch (_) {}
+  }
+  portadaProcesadaPendiente = null;
+}
+
+function mostrarAlertaDisenoAdmin(mensaje, tipo = 'warning') {
+  const el = $('#disenoEstadoAlerta');
+  if (!el) return;
+  if (!mensaje) {
+    el.textContent = '';
+    el.className = 'alert d-none small mb-3';
+    return;
+  }
+  const clase = tipo === 'danger'
+    ? 'alert-danger'
+    : (tipo === 'success' ? 'alert-success' : (tipo === 'info' ? 'alert-info' : 'alert-warning'));
+  el.textContent = mensaje;
+  el.className = `alert ${clase} small mb-3`;
+}
+
+function formatearPesoArchivo(bytes) {
+  const b = Number(bytes || 0);
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+async function verificarFirmaBinariaImagen(file) {
+  const slice = file.slice(0, 64);
+  const buffer = await slice.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length < 12) {
+    return { ok: false, motivo: 'El archivo es demasiado pequeño o está corrupto.' };
+  }
+
+  // Detectar si un SVG o XML fue renombrado a .jpg/.png
+  const asciiInicio = String.fromCharCode(...bytes.slice(0, 32)).toLowerCase();
+  if (asciiInicio.includes('<svg') || asciiInicio.includes('<?xml') || asciiInicio.includes('<!doctype svg')) {
+    return { ok: false, motivo: 'Formato SVG no permitido por seguridad. Solo se aceptan imágenes JPG, PNG y WebP.' };
+  }
+
+  // GIF87a / GIF89a
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+    return { ok: false, motivo: 'Formato GIF no permitido. Solo se aceptan imágenes JPG, PNG y WebP.' };
+  }
+
+  // JPEG: FF D8 FF
+  const esJpeg = bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  const esPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47 &&
+                bytes[4] === 0x0D && bytes[5] === 0x0A && bytes[6] === 0x1A && bytes[7] === 0x0A;
+  // WebP: RIFF....WEBP
+  const esWebp = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+                 bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+
+  if (!esJpeg && !esPng && !esWebp) {
+    return { ok: false, motivo: 'El archivo no es una imagen JPG, PNG o WebP válida.' };
+  }
+
+  return { ok: true };
+}
+
+async function procesarImagenPortadaSegura(file) {
+  if (!file) {
+    throw new Error('No se seleccionó ningún archivo.');
+  }
+
+  const nombre = String(file.name || '').trim().toLowerCase();
+  const mime = String(file.type || '').trim().toLowerCase();
+  const extMatch = nombre.match(/\.([a-z0-9]+)$/i);
+  const ext = extMatch ? extMatch[1].toLowerCase() : '';
+
+  if (ext === 'svg' || mime === 'image/svg+xml' || nombre.endsWith('.svg')) {
+    throw new Error('Formato SVG (.svg) rechazado por seguridad. Sube únicamente imágenes JPG, PNG o WebP.');
+  }
+
+  if (ext === 'gif' || mime === 'image/gif' || nombre.endsWith('.gif')) {
+    throw new Error('Formato GIF (.gif) no permitido. Sube únicamente imágenes JPG, PNG o WebP.');
+  }
+
+  const mimesPermitidos = new Set(['image/jpeg', 'image/png', 'image/webp']);
+  const extsPermitidas = new Set(['jpg', 'jpeg', 'png', 'webp']);
+
+  if (!extsPermitidas.has(ext) || !mimesPermitidos.has(mime)) {
+    throw new Error('Formato no permitido. Solo se aceptan archivos JPG, PNG y WebP.');
+  }
+
+  if (file.size <= 0) {
+    throw new Error('El archivo seleccionado está vacío.');
+  }
+
+  if (file.size > MAX_PORTADA_INPUT_BYTES) {
+    throw new Error(
+      `El archivo supera el límite máximo permitido de 5 MB (peso seleccionado: ${formatearPesoArchivo(file.size)}). Elige una imagen de hasta 5 MB.`
+    );
+  }
+
+  const firma = await verificarFirmaBinariaImagen(file);
+  if (!firma.ok) {
+    throw new Error(firma.motivo);
+  }
+
+  const tempUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const imageEl = new Image();
+      imageEl.onload = () => resolve(imageEl);
+      imageEl.onerror = () => reject(new Error('No se pudo decodificar la imagen seleccionada.'));
+      imageEl.src = tempUrl;
+    });
+
+    const origW = img.naturalWidth || img.width;
+    const origH = img.naturalHeight || img.height;
+    if (!origW || !origH) {
+      throw new Error('Dimensiones de imagen inválidas.');
+    }
+
+    const targetW = origW > MAX_PORTADA_WIDTH_PX ? MAX_PORTADA_WIDTH_PX : origW;
+    const targetH = Math.max(1, Math.round(origH * (targetW / origW)));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('No se pudo inicializar el compresor gráfico del navegador.');
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+
+    const toBlobAsync = (type, quality) => new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b), type, quality);
+    });
+
+    let outBlob = await toBlobAsync('image/webp', PORTADA_CALIDAD_COMPRESION);
+    let outExt = 'webp';
+    let outMime = 'image/webp';
+
+    if (!outBlob || outBlob.type !== 'image/webp') {
+      outBlob = await toBlobAsync('image/jpeg', PORTADA_CALIDAD_COMPRESION);
+      outExt = 'jpg';
+      outMime = 'image/jpeg';
+    }
+
+    if (!outBlob || outBlob.size <= 0) {
+      throw new Error('No se pudo comprimir la imagen.');
+    }
+
+    if (outBlob.size > MAX_PORTADA_INPUT_BYTES) {
+      throw new Error('La imagen procesada supera el límite de 5 MB.');
+    }
+
+    const previewUrl = URL.createObjectURL(outBlob);
+    return {
+      blob: outBlob,
+      ext: outExt,
+      mime: outMime,
+      width: targetW,
+      height: targetH,
+      bytes: outBlob.size,
+      previewUrl
+    };
+  } finally {
+    try { URL.revokeObjectURL(tempUrl); } catch (_) {}
+  }
+}
+
+function hexToRgbDisenoAdmin(hex) {
+  const norm = normalizarHexDisenoAdmin(hex) || '#1B4D3E';
+  return {
+    r: parseInt(norm.slice(1, 3), 16),
+    g: parseInt(norm.slice(3, 5), 16),
+    b: parseInt(norm.slice(5, 7), 16)
+  };
+}
+
+function luminanciaRelativaDisenoAdmin({ r, g, b }) {
+  const toLinear = (c) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function ratioContrasteDisenoAdmin(rgbA, rgbB) {
+  const l1 = luminanciaRelativaDisenoAdmin(rgbA);
+  const l2 = luminanciaRelativaDisenoAdmin(rgbB);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+function mezclarConOverlayDisenoAdmin(rgbBase, overlayPct) {
+  const alpha = Math.min(0.80, Math.max(0, Number(overlayPct || 0) / 100));
+  const ov = { r: 10, g: 15, b: 13 };
+  return {
+    r: Math.round(rgbBase.r * (1 - alpha) + ov.r * alpha),
+    g: Math.round(rgbBase.g * (1 - alpha) + ov.g * alpha),
+    b: Math.round(rgbBase.b * (1 - alpha) + ov.b * alpha)
+  };
+}
+
+function calcularColoresContrasteDisenoAdmin(colorPrimarioHex, colorSecundarioHex, overlayPct, tieneImagen) {
+  const rgbPrim = hexToRgbDisenoAdmin(colorPrimarioHex);
+  const rgbSec = hexToRgbDisenoAdmin(colorSecundarioHex);
+  const rgbBlanco = { r: 255, g: 255, b: 255 };
+  const rgbOscuro = { r: 17, g: 24, b: 39 };
+
+  const rgbFondoEfectivo = mezclarConOverlayDisenoAdmin(rgbPrim, overlayPct);
+  const contrasteHeroBlanco = ratioContrasteDisenoAdmin(rgbFondoEfectivo, rgbBlanco);
+  const contrasteHeroOscuro = ratioContrasteDisenoAdmin(rgbFondoEfectivo, rgbOscuro);
+
+  const usarTextoOscuroHero = (!tieneImagen && contrasteHeroOscuro > contrasteHeroBlanco) ||
+    (tieneImagen && overlayPct < 20 && contrasteHeroOscuro > contrasteHeroBlanco + 1.5);
+
+  const heroTextColor = usarTextoOscuroHero ? '#111827' : '#FFFFFF';
+  const heroSubTextColor = usarTextoOscuroHero ? 'rgba(17, 24, 39, 0.88)' : 'rgba(255, 255, 255, 0.92)';
+  const heroTextShadow = usarTextoOscuroHero ? '0 1px 10px rgba(255, 255, 255, 0.55)' : '0 2px 14px rgba(0, 0, 0, 0.48)';
+  const ratioHeroEfectivo = usarTextoOscuroHero ? contrasteHeroOscuro : contrasteHeroBlanco;
+
+  const btnContrasteBlanco = ratioContrasteDisenoAdmin(rgbSec, rgbBlanco);
+  const btnContrasteOscuro = ratioContrasteDisenoAdmin(rgbSec, rgbOscuro);
+  const usarTextoOscuroBtn = btnContrasteOscuro > btnContrasteBlanco + 0.6;
+  const btnTextColor = usarTextoOscuroBtn ? '#111827' : '#FFFFFF';
+  const ratioBtnEfectivo = usarTextoOscuroBtn ? btnContrasteOscuro : btnContrasteBlanco;
+
+  const ratioPrimarioVsSecundario = ratioContrasteDisenoAdmin(rgbPrim, rgbSec);
+  const avisos = [];
+
+  if (ratioPrimarioVsSecundario < 1.35) {
+    avisos.push('El color principal y el color secundario son muy parecidos (contraste ' + ratioPrimarioVsSecundario.toFixed(1) + ':1). Elige un color secundario más diferenciable para que los botones destaquen.');
+  }
+  if (tieneImagen && overlayPct < 20) {
+    avisos.push('La oscuridad del filtro está por debajo de 20%. Si tu foto tiene zonas claras, sube el filtro a 30%–50% para garantizar una lectura perfecta.');
+  }
+  if (!tieneImagen && ratioHeroEfectivo < 4.5) {
+    avisos.push('El contraste entre el fondo y el texto de portada es moderado (' + ratioHeroEfectivo.toFixed(1) + ':1). Ajusta el color principal o la oscuridad del filtro.');
+  }
+  if (ratioBtnEfectivo < 3.0) {
+    avisos.push('El color secundario tiene contraste bajo para el botón de acción (' + ratioBtnEfectivo.toFixed(1) + ':1).');
+  }
+
+  return {
+    heroTextColor,
+    heroSubTextColor,
+    heroTextShadow,
+    btnTextColor,
+    usarTextoOscuroHero,
+    avisos
+  };
+}
+
+function seleccionarFocoDisenoUI(focoRaw) {
+  const foco = normalizarFocoDisenoAdmin(focoRaw);
+  const hiddenInput = $('#disenoHeroFoco');
+  if (hiddenInput) hiddenInput.value = foco;
+  const labelEl = $('#disenoFocoLabel');
+  if (labelEl) labelEl.textContent = FOCOS_LABELS_ADMIN[foco] || 'Centro';
+  $$('#disenoFocoGrid .diseno-foco-btn').forEach(btn => {
+    const activo = btn.dataset.foco === foco;
+    btn.classList.toggle('active', activo);
+    btn.setAttribute('aria-checked', activo ? 'true' : 'false');
+  });
+}
+
+function actualizarContadoresTextoDiseno() {
+  const tit = String($('#disenoHeroTitulo')?.value || '');
+  const sub = String($('#disenoHeroSubtitulo')?.value || '');
+  if ($('#disenoHeroTituloCount')) $('#disenoHeroTituloCount').textContent = `${tit.length} / 140`;
+  if ($('#disenoHeroSubtituloCount')) $('#disenoHeroSubtituloCount').textContent = `${sub.length} / 160`;
+}
+
+function obtenerEstadoActualFormularioDiseno() {
+  const negocio = window.negocioAdminActual || {};
+  const kit = obtenerKitDisenoGiroAdmin(negocio.tipo_negocio);
+
+  const foco = normalizarFocoDisenoAdmin($('#disenoHeroFoco')?.value);
+  const overlay = normalizarOverlayDisenoAdmin($('#disenoHeroOverlay')?.value);
+  const tituloCustom = String($('#disenoHeroTitulo')?.value || '').trim();
+  const subtituloCustom = String($('#disenoHeroSubtitulo')?.value || '').trim();
+  const hexPrim = normalizarHexDisenoAdmin($('#disenoColorPrimarioHex')?.value) || kit.primario;
+  const hexSec = normalizarHexDisenoAdmin($('#disenoColorSecundarioHex')?.value) || kit.secundario;
+
+  // Resolver fuente de imagen según prioridad 5.1:
+  // 1) Nueva imagen procesada en memoria o hero_imagen_url guardada del dueño (si no fue marcada para quitar)
+  // 2) heroImagen del kit del giro
+  // 3) Fondo de color sólido del kit
+  let urlPortadaActiva = '';
+  let fuentePortada = 'color-kit';
+
+  const urlGuardadaValida = (!portadaMarcadaParaQuitar && esUrlBucketNegociosMediaAdmin(negocio.hero_imagen_url, negocio.id))
+    ? String(negocio.hero_imagen_url).trim()
+    : '';
+
+  if (portadaProcesadaPendiente && portadaProcesadaPendiente.previewUrl) {
+    urlPortadaActiva = portadaProcesadaPendiente.previewUrl;
+    fuentePortada = 'foto-dueno-nueva';
+  } else if (urlGuardadaValida) {
+    urlPortadaActiva = urlGuardadaValida;
+    fuentePortada = 'foto-dueno-guardada';
+  } else if (kit.heroImagen) {
+    urlPortadaActiva = kit.heroImagen;
+    fuentePortada = 'foto-kit';
+  }
+
+  return {
+    kit,
+    foco,
+    overlay,
+    tituloCustom,
+    subtituloCustom,
+    tituloEfectivo: tituloCustom || kit.titulo,
+    subtituloEfectivo: subtituloCustom || kit.subtitulo,
+    colorPrimario: hexPrim,
+    colorSecundario: hexSec,
+    urlPortadaActiva,
+    fuentePortada,
+    tieneFotoPropia: fuentePortada === 'foto-dueno-nueva' || fuentePortada === 'foto-dueno-guardada'
+  };
+}
+
+function renderPreviewDisenoAdmin() {
+  const st = obtenerEstadoActualFormularioDiseno();
+  actualizarContadoresTextoDiseno();
+
+  if ($('#disenoHeroOverlayVal')) {
+    $('#disenoHeroOverlayVal').textContent = `${st.overlay}%`;
+  }
+
+  const btnQuitar = $('#btnQuitarPortadaDiseno');
+  if (btnQuitar) {
+    btnQuitar.classList.toggle('d-none', !st.tieneFotoPropia);
+  }
+
+  const badgeFuente = $('#disenoEstadoFuenteBadge');
+  if (badgeFuente) {
+    if (st.fuentePortada === 'foto-dueno-nueva') {
+      badgeFuente.className = 'badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-3 py-2';
+      badgeFuente.textContent = 'Nueva portada lista (sin guardar)';
+    } else if (st.fuentePortada === 'foto-dueno-guardada') {
+      badgeFuente.className = 'badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2';
+      badgeFuente.textContent = 'Portada propia activa';
+    } else if (st.fuentePortada === 'foto-kit') {
+      badgeFuente.className = 'badge bg-light text-dark border rounded-pill px-3 py-2';
+      badgeFuente.textContent = 'Respaldo visual del giro';
+    } else {
+      badgeFuente.className = 'badge bg-secondary-subtle text-dark rounded-pill px-3 py-2';
+      badgeFuente.textContent = 'Fondo de color del giro';
+    }
+  }
+
+  const tieneImagen = Boolean(st.urlPortadaActiva);
+  const contraste = calcularColoresContrasteDisenoAdmin(
+    st.colorPrimario,
+    st.colorSecundario,
+    st.overlay,
+    tieneImagen
+  );
+
+  const avisoEl = $('#disenoContrasteAviso');
+  if (avisoEl) {
+    if (contraste.avisos.length > 0) {
+      avisoEl.textContent = '⚠️ ' + contraste.avisos.join(' ');
+      avisoEl.classList.remove('d-none');
+    } else {
+      avisoEl.textContent = '';
+      avisoEl.classList.add('d-none');
+    }
+  }
+
+  const tagContraste = $('#disenoPreviewContrasteTag');
+  if (tagContraste) {
+    tagContraste.textContent = contraste.usarTextoOscuroHero
+      ? 'Contraste auto: Texto oscuro (#111827)'
+      : 'Contraste auto: Texto claro (#FFFFFF)';
+  }
+
+  const aplicarEnCajaPreview = (prefix) => {
+    const box = $(`#${prefix}Box`);
+    const img = $(`#${prefix}Img`);
+    const ov = $(`#${prefix}Overlay`);
+    const badge = $(`#${prefix}Badge`);
+    const tit = $(`#${prefix}Titulo`);
+    const sub = $(`#${prefix}Subtitulo`);
+    const btn = $(`#${prefix}Btn`);
+
+    if (box) {
+      box.style.backgroundColor = st.colorPrimario;
+      box.style.color = contraste.heroTextColor;
+    }
+    if (ov) {
+      ov.style.backgroundColor = `rgba(10, 15, 13, ${(st.overlay / 100).toFixed(2)})`;
+    }
+    if (img) {
+      img.style.objectFit = 'cover';
+      img.style.objectPosition = st.foco;
+      if (st.urlPortadaActiva) {
+        img.onerror = () => {
+          if (st.kit.heroImagen && img.src !== st.kit.heroImagen) {
+            img.src = st.kit.heroImagen;
+          } else {
+            img.classList.add('d-none');
+            img.removeAttribute('src');
+          }
+        };
+        if (img.getAttribute('src') !== st.urlPortadaActiva) {
+          img.src = st.urlPortadaActiva;
+        }
+        img.classList.remove('d-none');
+      } else {
+        img.onerror = null;
+        img.classList.add('d-none');
+        img.removeAttribute('src');
+      }
+    }
+    if (badge) {
+      badge.textContent = st.kit.badge;
+      badge.style.borderColor = st.colorSecundario;
+      badge.style.color = contraste.heroTextColor;
+    }
+    if (tit) {
+      tit.textContent = st.tituloEfectivo;
+      tit.style.fontFamily = st.kit.fuente;
+      tit.style.color = contraste.heroTextColor;
+      tit.style.textShadow = contraste.heroTextShadow;
+    }
+    if (sub) {
+      sub.textContent = st.subtituloEfectivo;
+      sub.style.color = contraste.heroSubTextColor;
+      sub.style.textShadow = contraste.heroTextShadow;
+    }
+    if (btn) {
+      btn.textContent = st.kit.textoBtn;
+      btn.style.backgroundColor = st.colorSecundario;
+      btn.style.color = contraste.btnTextColor;
+    }
+  };
+
+  aplicarEnCajaPreview('disenoPreviewDesktop');
+  aplicarEnCajaPreview('disenoPreviewMobile');
+}
+
+function sincronizarFormularioDisenoAdmin() {
+  const negocio = window.negocioAdminActual || {};
+  const kit = obtenerKitDisenoGiroAdmin(negocio.tipo_negocio);
+
+  limpiarPortadaProcesadaPendiente();
+  portadaMarcadaParaQuitar = false;
+  mostrarAlertaDisenoAdmin('');
+
+  if ($('#disenoPortadaInput')) $('#disenoPortadaInput').value = '';
+
+  const tieneFotoPropia = esUrlBucketNegociosMediaAdmin(negocio.hero_imagen_url, negocio.id);
+  const pesoInfoEl = $('#disenoPortadaPesoInfo');
+  if (pesoInfoEl) {
+    pesoInfoEl.textContent = tieneFotoPropia
+      ? 'Portada personalizada activa en Storage'
+      : 'Sin foto propia (usando respaldo del giro)';
+  }
+
+  const focoInicial = normalizarFocoDisenoAdmin(negocio.hero_foco);
+  seleccionarFocoDisenoUI(focoInicial);
+
+  const overlayInicial = normalizarOverlayDisenoAdmin(negocio.hero_overlay);
+  if ($('#disenoHeroOverlay')) $('#disenoHeroOverlay').value = String(overlayInicial);
+
+  if ($('#disenoHeroTitulo')) {
+    $('#disenoHeroTitulo').value = String(negocio.hero_titulo_custom || '');
+    $('#disenoHeroTitulo').placeholder = kit.titulo;
+  }
+  if ($('#disenoHeroSubtitulo')) {
+    $('#disenoHeroSubtitulo').value = String(negocio.hero_subtitulo_custom || '');
+    $('#disenoHeroSubtitulo').placeholder = kit.subtitulo;
+  }
+
+  const primHex = normalizarHexDisenoAdmin(negocio.color_primario) || kit.primario;
+  const secHex = normalizarHexDisenoAdmin(negocio.color_secundario) || kit.secundario;
+
+  if ($('#disenoColorPrimarioPicker')) $('#disenoColorPrimarioPicker').value = primHex;
+  if ($('#disenoColorPrimarioHex')) {
+    $('#disenoColorPrimarioHex').value = primHex;
+    $('#disenoColorPrimarioHex').placeholder = kit.primario;
+  }
+  if ($('#disenoColorSecundarioPicker')) $('#disenoColorSecundarioPicker').value = secHex;
+  if ($('#disenoColorSecundarioHex')) {
+    $('#disenoColorSecundarioHex').value = secHex;
+    $('#disenoColorSecundarioHex').placeholder = kit.secundario;
+  }
+
+  renderPreviewDisenoAdmin();
+}
+
+function limpiarUiDisenoTiendaAdmin() {
+  limpiarPortadaProcesadaPendiente();
+  portadaMarcadaParaQuitar = false;
+  mostrarAlertaDisenoAdmin('');
+  if ($('#disenoPortadaInput')) $('#disenoPortadaInput').value = '';
+  if ($('#disenoPortadaPesoInfo')) $('#disenoPortadaPesoInfo').textContent = 'Sin archivo nuevo seleccionado';
+  if ($('#disenoHeroTitulo')) $('#disenoHeroTitulo').value = '';
+  if ($('#disenoHeroSubtitulo')) $('#disenoHeroSubtitulo').value = '';
+  seleccionarFocoDisenoUI('center');
+  if ($('#disenoHeroOverlay')) $('#disenoHeroOverlay').value = '40';
+}
+
+function restaurarDisenoGiroAdmin() {
+  if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false || guardandoDisenoAdmin) return;
+  const negocio = window.negocioAdminActual || {};
+  const kit = obtenerKitDisenoGiroAdmin(negocio.tipo_negocio);
+
+  limpiarPortadaProcesadaPendiente();
+  portadaMarcadaParaQuitar = true;
+
+  if ($('#disenoPortadaInput')) $('#disenoPortadaInput').value = '';
+  if ($('#disenoPortadaPesoInfo')) {
+    $('#disenoPortadaPesoInfo').textContent = 'Se restaurará el respaldo del giro al guardar';
+  }
+
+  seleccionarFocoDisenoUI('center');
+  if ($('#disenoHeroOverlay')) $('#disenoHeroOverlay').value = '40';
+  if ($('#disenoHeroTitulo')) $('#disenoHeroTitulo').value = '';
+  if ($('#disenoHeroSubtitulo')) $('#disenoHeroSubtitulo').value = '';
+
+  if ($('#disenoColorPrimarioPicker')) $('#disenoColorPrimarioPicker').value = kit.primario;
+  if ($('#disenoColorPrimarioHex')) $('#disenoColorPrimarioHex').value = kit.primario;
+  if ($('#disenoColorSecundarioPicker')) $('#disenoColorSecundarioPicker').value = kit.secundario;
+  if ($('#disenoColorSecundarioHex')) $('#disenoColorSecundarioHex').value = kit.secundario;
+
+  renderPreviewDisenoAdmin();
+  mostrarAlertaDisenoAdmin(
+    'Diseño original del giro cargado en la vista previa. Pulsa "Guardar cambios" para aplicarlo en tu tienda.',
+    'info'
+  );
+}
+
+async function manejarSeleccionPortadaDiseno(e) {
+  const input = e?.target || $('#disenoPortadaInput');
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false || guardandoDisenoAdmin) {
+    input.value = '';
+    return;
+  }
+
+  procesandoImagenDiseno = true;
+  mostrarAlertaDisenoAdmin('');
+  const pesoInfoEl = $('#disenoPortadaPesoInfo');
+  if (pesoInfoEl) {
+    pesoInfoEl.textContent = 'Optimizando y verificando imagen...';
+  }
+
+  try {
+    const procesada = await procesarImagenPortadaSegura(file);
+    limpiarPortadaProcesadaPendiente();
+    portadaProcesadaPendiente = procesada;
+    portadaMarcadaParaQuitar = false;
+
+    if (pesoInfoEl) {
+      pesoInfoEl.textContent = `Peso final: ${formatearPesoArchivo(procesada.bytes)} (${procesada.ext.toUpperCase()} · ${procesada.width}×${procesada.height} px)`;
+    }
+    mostrarAlertaDisenoAdmin(
+      `Imagen optimizada correctamente (${formatearPesoArchivo(procesada.bytes)}). Pulsa "Guardar cambios" para publicarla.`,
+      'info'
+    );
+    renderPreviewDisenoAdmin();
+  } catch (err) {
+    limpiarPortadaProcesadaPendiente();
+    input.value = '';
+    const msg = err?.message || 'El archivo seleccionado no es válido.';
+    if (pesoInfoEl) {
+      pesoInfoEl.textContent = 'Archivo rechazado';
+    }
+    mostrarAlertaDisenoAdmin(msg, 'danger');
+    toast(esc(msg), 'danger');
+    renderPreviewDisenoAdmin();
+  } finally {
+    procesandoImagenDiseno = false;
+  }
+}
+
+async function guardarDisenoTiendaAdmin(e) {
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
+  if (!supabaseClient || guardandoDisenoAdmin || procesandoImagenDiseno) return;
+
+  if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false) {
+    mostrarAlertaDisenoAdmin('Tu negocio está suspendido: no puedes modificar el diseño.', 'danger');
+    return;
+  }
+
+  let tenantId;
+  try {
+    tenantId = getTenantIdOrThrow();
+  } catch (err) {
+    toast(esc(err.message || 'Sesión de negocio inválida.'), 'danger');
+    return;
+  }
+
+  const negocio = window.negocioAdminActual || {};
+  const kit = obtenerKitDisenoGiroAdmin(negocio.tipo_negocio);
+
+  const rawPrimHex = String($('#disenoColorPrimarioHex')?.value || '').trim();
+  const rawSecHex = String($('#disenoColorSecundarioHex')?.value || '').trim();
+  const normPrimHex = normalizarHexDisenoAdmin(rawPrimHex);
+  const normSecHex = normalizarHexDisenoAdmin(rawSecHex);
+
+  if (rawPrimHex && !normPrimHex) {
+    mostrarAlertaDisenoAdmin('El color principal debe tener formato hexadecimal válido (ej. #1B4D3E).', 'warning');
+    $('#disenoColorPrimarioHex')?.focus();
+    return;
+  }
+  if (rawSecHex && !normSecHex) {
+    mostrarAlertaDisenoAdmin('El color secundario debe tener formato hexadecimal válido (ej. #D9822B).', 'warning');
+    $('#disenoColorSecundarioHex')?.focus();
+    return;
+  }
+
+  const tituloCustom = String($('#disenoHeroTitulo')?.value || '')
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .trim();
+  if (tituloCustom.length > 140) {
+    mostrarAlertaDisenoAdmin('El título de portada no puede superar los 140 caracteres.', 'warning');
+    $('#disenoHeroTitulo')?.focus();
+    return;
+  }
+
+  const subtituloCustom = String($('#disenoHeroSubtitulo')?.value || '')
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .trim();
+  if (subtituloCustom.length > 160) {
+    mostrarAlertaDisenoAdmin('El subtítulo de portada no puede superar los 160 caracteres.', 'warning');
+    $('#disenoHeroSubtitulo')?.focus();
+    return;
+  }
+
+  const foco = normalizarFocoDisenoAdmin($('#disenoHeroFoco')?.value);
+  const overlay = normalizarOverlayDisenoAdmin($('#disenoHeroOverlay')?.value);
+
+  const colorPrimarioGuardar = (normPrimHex && normPrimHex.toUpperCase() !== kit.primario.toUpperCase())
+    ? normPrimHex
+    : null;
+  const colorSecundarioGuardar = (normSecHex && normSecHex.toUpperCase() !== kit.secundario.toUpperCase())
+    ? normSecHex
+    : null;
+
+  guardandoDisenoAdmin = true;
+  mostrarAlertaDisenoAdmin('');
+  const btn = $('#btnGuardarDisenoTienda');
+  const btnRestaurar = $('#btnRestaurarDisenoGiro');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando cambios...';
+  }
+  if (btnRestaurar) btnRestaurar.disabled = true;
+
+  const oldHeroUrl = String(negocio.hero_imagen_url || '').trim();
+  const oldStoragePath = extraerRutaBucketNegociosMedia(oldHeroUrl, tenantId);
+  let newUploadedPath = null;
+  let finalHeroImagenUrl = portadaMarcadaParaQuitar ? null : (oldHeroUrl || null);
+
+  try {
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    if (authError || !user) {
+      throw new Error('Tu sesión expiró. Vuelve a iniciar sesión.');
+    }
+
+    // 1. Si hay nueva imagen procesada en memoria, subirla a negocios-media/<negocio_id>/portada-<timestamp>.<ext>
+    if (portadaProcesadaPendiente && portadaProcesadaPendiente.blob) {
+      const timestamp = Date.now();
+      const rutaObjeto = `${tenantId}/portada-${timestamp}.${portadaProcesadaPendiente.ext}`;
+      const { error: uploadErr } = await supabaseClient
+        .storage
+        .from('negocios-media')
+        .upload(rutaObjeto, portadaProcesadaPendiente.blob, {
+          contentType: portadaProcesadaPendiente.mime,
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadErr) {
+        const msgUp = String(uploadErr.message || '');
+        if (/bucket.*not found/i.test(msgUp)) {
+          throw new Error('Falta crear el bucket "negocios-media" ejecutando sql/12_expansion_giros_visuales.sql en el SQL Editor de Supabase.');
+        }
+        throw new Error(`No se pudo subir la portada a Storage: ${msgUp || 'verifica tus permisos.'}`);
+      }
+
+      newUploadedPath = rutaObjeto;
+      const { data: pubData } = supabaseClient
+        .storage
+        .from('negocios-media')
+        .getPublicUrl(rutaObjeto);
+
+      const publicUrl = String(pubData?.publicUrl || '').trim();
+      if (!esUrlBucketNegociosMediaAdmin(publicUrl, tenantId)) {
+        throw new Error('La URL generada para la portada no pertenece al bucket seguro del proyecto.');
+      }
+      finalHeroImagenUrl = publicUrl;
+    }
+
+    // 2. Actualizar columnas de diseño en public.negocios
+    const payloadCompleto = {
+      hero_imagen_url: finalHeroImagenUrl,
+      hero_titulo_custom: tituloCustom || null,
+      hero_subtitulo_custom: subtituloCustom || null,
+      hero_foco: foco,
+      hero_overlay: overlay,
+      color_primario: colorPrimarioGuardar,
+      color_secundario: colorSecundarioGuardar
+    };
+
+    let avisoSql12Pendiente = false;
+    let { data: updatedNegocio, error: updateErr } = await supabaseClient
+      .from('negocios')
+      .update(payloadCompleto)
+      .eq('id', tenantId)
+      .eq('owner_id', user.id)
+      .select('*')
+      .single();
+
+    // Si las 3 columnas nuevas de sql/12 aún no fueron creadas en la BD, guardar las columnas base de sql/08
+    if (updateErr) {
+      const errText = `${updateErr.code || ''} ${updateErr.message || ''} ${updateErr.details || ''}`;
+      if (/hero_subtitulo_custom|hero_foco|hero_overlay|PGRST204|42703/i.test(errText)) {
+        avisoSql12Pendiente = true;
+        const payloadBase = {
+          hero_imagen_url: finalHeroImagenUrl,
+          hero_titulo_custom: tituloCustom || null,
+          color_primario: colorPrimarioGuardar,
+          color_secundario: colorSecundarioGuardar
+        };
+        const retryRes = await supabaseClient
+          .from('negocios')
+          .update(payloadBase)
+          .eq('id', tenantId)
+          .eq('owner_id', user.id)
+          .select('*')
+          .single();
+        updatedNegocio = retryRes.data;
+        updateErr = retryRes.error;
+      }
+    }
+
+    if (updateErr || !updatedNegocio) {
+      throw new Error(updateErr?.message || 'No se pudieron guardar los cambios de diseño en la base de datos.');
+    }
+
+    // 3. Si se reemplazó o eliminó la portada anterior, borrar el archivo previo del bucket para no acumular archivos
+    const debeBorrarAnterior = Boolean(
+      oldStoragePath &&
+      (portadaMarcadaParaQuitar || (newUploadedPath && oldStoragePath !== newUploadedPath))
+    );
+    if (debeBorrarAnterior) {
+      try {
+        await supabaseClient.storage.from('negocios-media').remove([oldStoragePath]);
+      } catch (remErr) {
+        console.warn('No se pudo eliminar la portada anterior de Storage:', remErr);
+      }
+    }
+
+    // 4. Actualizar estado en memoria y refrescar UI
+    window.negocioAdminActual = {
+      ...window.negocioAdminActual,
+      ...updatedNegocio,
+      hero_subtitulo_custom: updatedNegocio.hero_subtitulo_custom ?? (subtituloCustom || null),
+      hero_foco: updatedNegocio.hero_foco ?? foco,
+      hero_overlay: updatedNegocio.hero_overlay ?? overlay
+    };
+
+    sincronizarFormularioDisenoAdmin();
+    renderAdminProducts();
+
+    if (avisoSql12Pendiente) {
+      mostrarAlertaDisenoAdmin(
+        'Se guardaron la portada, el título y los colores. Para persistir subtítulo, punto de enfoque y filtro en la base de datos, ejecuta sql/12_expansion_giros_visuales.sql en Supabase.',
+        'warning'
+      );
+      toast('Diseño base guardado (falta ejecutar sql/12 en Supabase)', 'warning');
+    } else {
+      mostrarAlertaDisenoAdmin('✅ Diseño guardado y publicado en tu tienda.', 'success');
+      toast('✅ Diseño de tu tienda actualizado correctamente.', 'success');
+    }
+  } catch (err) {
+    console.error('Error guardando diseño de la tienda:', err);
+    if (newUploadedPath) {
+      try {
+        await supabaseClient.storage.from('negocios-media').remove([newUploadedPath]);
+      } catch (_) {}
+    }
+    const msg = err?.message || 'No se pudieron guardar los cambios de diseño.';
+    mostrarAlertaDisenoAdmin(`❌ ${msg}`, 'danger');
+    toast(esc(msg), 'danger');
+  } finally {
+    guardandoDisenoAdmin = false;
+    if (btn) {
+      btn.disabled = cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false;
+      btn.innerHTML = origHtml;
+    }
+    if (btnRestaurar) {
+      btnRestaurar.disabled = cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false;
+    }
+  }
+}
+
+// Eventos interactivos del módulo "Diseño de mi tienda"
+if ($('#disenoPortadaInput')) {
+  $('#disenoPortadaInput').addEventListener('change', manejarSeleccionPortadaDiseno);
+}
+
+if ($('#btnQuitarPortadaDiseno')) {
+  $('#btnQuitarPortadaDiseno').addEventListener('click', () => {
+    if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false || guardandoDisenoAdmin) return;
+    limpiarPortadaProcesadaPendiente();
+    portadaMarcadaParaQuitar = true;
+    if ($('#disenoPortadaInput')) $('#disenoPortadaInput').value = '';
+    if ($('#disenoPortadaPesoInfo')) {
+      $('#disenoPortadaPesoInfo').textContent = 'Se quitará tu foto propia al guardar (usará respaldo del giro)';
+    }
+    mostrarAlertaDisenoAdmin('Foto propia marcada para quitar. Pulsa "Guardar cambios" para confirmar.', 'info');
+    renderPreviewDisenoAdmin();
+  });
+}
+
+$$('#disenoFocoGrid .diseno-foco-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false || guardandoDisenoAdmin) return;
+    seleccionarFocoDisenoUI(btn.dataset.foco);
+    renderPreviewDisenoAdmin();
+  });
+});
+
+function configurarArrastreFocoEnPreview(boxSelector) {
+  const box = $(boxSelector);
+  if (!box) return;
+  let arrastrando = false;
+
+  const aplicarDesdeEvento = (ev) => {
+    if (cuentaSuspendidaAdmin || window.negocioAdminActual?.activo === false || guardandoDisenoAdmin) return;
+    const rect = box.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const clientX = ev.touches && ev.touches[0] ? ev.touches[0].clientX : ev.clientX;
+    const clientY = ev.touches && ev.touches[0] ? ev.touches[0].clientY : ev.clientY;
+    const relX = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const relY = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+
+    const col = relX < 0.333 ? 'left' : (relX > 0.666 ? 'right' : 'center');
+    const row = relY < 0.333 ? 'top' : (relY > 0.666 ? 'bottom' : 'center');
+
+    let foco = 'center';
+    if (col === 'center' && row === 'center') foco = 'center';
+    else if (col === 'center') foco = row;
+    else if (row === 'center') foco = col;
+    else foco = `${col} ${row}`;
+
+    seleccionarFocoDisenoUI(foco);
+    renderPreviewDisenoAdmin();
+  };
+
+  box.addEventListener('mousedown', (ev) => {
+    arrastrando = true;
+    aplicarDesdeEvento(ev);
+  });
+  window.addEventListener('mousemove', (ev) => {
+    if (arrastrando) aplicarDesdeEvento(ev);
+  });
+  window.addEventListener('mouseup', () => {
+    arrastrando = false;
+  });
+  box.addEventListener('touchstart', (ev) => {
+    arrastrando = true;
+    aplicarDesdeEvento(ev);
+  }, { passive: true });
+  box.addEventListener('touchmove', (ev) => {
+    if (arrastrando) aplicarDesdeEvento(ev);
+  }, { passive: true });
+  box.addEventListener('touchend', () => {
+    arrastrando = false;
+  });
+}
+
+configurarArrastreFocoEnPreview('#disenoPreviewDesktopBox');
+configurarArrastreFocoEnPreview('#disenoPreviewMobileBox');
+
+if ($('#disenoHeroOverlay')) {
+  $('#disenoHeroOverlay').addEventListener('input', renderPreviewDisenoAdmin);
+}
+if ($('#disenoHeroTitulo')) {
+  $('#disenoHeroTitulo').addEventListener('input', renderPreviewDisenoAdmin);
+}
+if ($('#disenoHeroSubtitulo')) {
+  $('#disenoHeroSubtitulo').addEventListener('input', renderPreviewDisenoAdmin);
+}
+
+if ($('#disenoColorPrimarioPicker')) {
+  $('#disenoColorPrimarioPicker').addEventListener('input', (e) => {
+    const hex = normalizarHexDisenoAdmin(e.target.value);
+    if (hex && $('#disenoColorPrimarioHex')) $('#disenoColorPrimarioHex').value = hex;
+    renderPreviewDisenoAdmin();
+  });
+}
+if ($('#disenoColorPrimarioHex')) {
+  $('#disenoColorPrimarioHex').addEventListener('input', (e) => {
+    const hex = normalizarHexDisenoAdmin(e.target.value);
+    if (hex && $('#disenoColorPrimarioPicker')) $('#disenoColorPrimarioPicker').value = hex;
+    renderPreviewDisenoAdmin();
+  });
+}
+
+if ($('#disenoColorSecundarioPicker')) {
+  $('#disenoColorSecundarioPicker').addEventListener('input', (e) => {
+    const hex = normalizarHexDisenoAdmin(e.target.value);
+    if (hex && $('#disenoColorSecundarioHex')) $('#disenoColorSecundarioHex').value = hex;
+    renderPreviewDisenoAdmin();
+  });
+}
+if ($('#disenoColorSecundarioHex')) {
+  $('#disenoColorSecundarioHex').addEventListener('input', (e) => {
+    const hex = normalizarHexDisenoAdmin(e.target.value);
+    if (hex && $('#disenoColorSecundarioPicker')) $('#disenoColorSecundarioPicker').value = hex;
+    renderPreviewDisenoAdmin();
+  });
+}
+
+$$('#disenoPreviewModoGroup button[data-modo]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#disenoPreviewModoGroup button[data-modo]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const modo = btn.dataset.modo;
+    const deskWrap = $('#disenoPreviewDesktopWrap');
+    const mobWrap = $('#disenoPreviewMobileWrap');
+    if (deskWrap) deskWrap.classList.toggle('d-none', modo === 'celular');
+    if (mobWrap) mobWrap.classList.toggle('d-none', modo === 'escritorio');
+  });
+});
+
+if ($('#btnRestaurarDisenoGiro')) {
+  $('#btnRestaurarDisenoGiro').addEventListener('click', restaurarDisenoGiroAdmin);
+}
+if ($('#formDisenoTienda')) {
+  $('#formDisenoTienda').addEventListener('submit', guardarDisenoTiendaAdmin);
 }
 
 // Inicialización de la sesión al cargar el archivo

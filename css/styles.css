@@ -2,6 +2,8 @@
    VARIABLES Y RESET PROFESIONAL
    ============================================ */
 :root {
+  --color-primario: #1B4D3E;
+  --color-secundario: #D9822B;
   --verde-bosque: #1B4D3E;
   --verde-oscuro: #12352A;
   --crema-fondo: #F6F0E2;
@@ -10,6 +12,13 @@
   --dorado-hover: #b86b1f;
   --texto-oscuro: #2C2523;
   --borde-calido: #EBE3D5;
+  --fuente-titulo: 'Playfair Display', serif;
+  --hero-foco: center;
+  --hero-overlay-alpha: 0.40;
+  --hero-text-color: #ffffff;
+  --hero-subtext-color: rgba(255, 255, 255, 0.92);
+  --hero-text-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+  --hero-btn-text-color: #ffffff;
   --hero-overlay-inicio: rgba(18, 53, 42, 0.62);
   --hero-overlay-fin: rgba(18, 53, 42, 0.84);
   --hero-badge-bg: rgba(217, 130, 43, 0.28);
@@ -204,12 +213,15 @@ h1, h2, h3, h4, .serif-font {
    HERO SECTION (THEMING DINÁMICO + SIN PARPADEO)
    ============================================ */
 .hero-section {
-  background: linear-gradient(135deg, #151e1b 0%, #1f2926 100%);
-  min-height: 82vh;
+  background-color: var(--color-primario, var(--verde-bosque));
+  aspect-ratio: 16 / 7;
+  min-height: 440px;
+  max-height: 640px;
+  width: 100%;
   display: flex;
   align-items: center;
-  color: #fff;
-  padding: 60px 0;
+  color: var(--hero-text-color, #ffffff);
+  padding: 48px 0;
   position: relative;
   overflow: hidden;
 }
@@ -218,19 +230,31 @@ h1, h2, h3, h4, .serif-font {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background-position: center;
-  background-size: cover;
-  background-repeat: no-repeat;
+  background-color: var(--color-primario, var(--verde-bosque));
   opacity: 0;
-  transition: opacity 0.45s ease;
+  transition: opacity 0.25s ease;
+}
+
+.hero-bg-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--hero-foco, center);
+  display: block;
+}
+
+.hero-overlay-layer {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(10, 15, 13, var(--hero-overlay-alpha, 0.40));
+  pointer-events: none;
 }
 
 .hero-content-wrapper {
   position: relative;
   z-index: 1;
   opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  transition: opacity 0.25s ease;
 }
 
 .hero-section.is-hydrated .hero-bg-layer {
@@ -239,28 +263,27 @@ h1, h2, h3, h4, .serif-font {
 
 .hero-section.is-hydrated .hero-content-wrapper {
   opacity: 1;
-  transform: translateY(0);
 }
 
 .hero-logo-emblem {
-  width: 132px;
-  height: 132px;
+  width: 112px;
+  height: 112px;
   background-color: var(--crema-fondo);
-  border: 4px solid var(--dorado-pan);
+  border: 3px solid var(--dorado-pan);
   border-radius: 50%;
-  margin: 0 auto 22px;
+  margin: 0 auto 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
   padding: 10px;
 }
 
 .emblem-title {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--fuente-titulo, 'Playfair Display', serif);
   font-weight: 800;
-  font-size: 0.92rem;
+  font-size: 0.86rem;
   color: var(--verde-bosque);
   line-height: 1.1;
   margin-top: 2px;
@@ -277,63 +300,52 @@ h1, h2, h3, h4, .serif-font {
 .hero-badge {
   background-color: var(--hero-badge-bg);
   border: 1px solid var(--dorado-pan);
-  color: var(--crema-fondo);
-  padding: 7px 20px;
+  color: var(--hero-text-color, #ffffff);
+  padding: 6px 18px;
   border-radius: 50px;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 1.2px;
   display: inline-block;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   backdrop-filter: blur(6px);
-  animation: pulse 2.4s infinite ease-in-out;
-  box-shadow: 0 0 18px rgba(217, 130, 43, 0.35);
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.04); }
 }
 
 .hero-title {
-  font-size: clamp(2.4rem, 5vw, 4.2rem);
+  font-family: var(--fuente-titulo, 'Playfair Display', serif);
+  color: var(--hero-text-color, #ffffff);
+  font-size: clamp(2.1rem, 4.4vw, 3.8rem);
   font-weight: 800;
-  margin-bottom: 18px;
-  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
-  letter-spacing: -0.8px;
+  line-height: 1.15;
+  margin-bottom: 14px;
+  text-shadow: var(--hero-text-shadow, 0 2px 14px rgba(0, 0, 0, 0.45));
+  letter-spacing: -0.6px;
+}
+
+.hero-subtitle {
+  color: var(--hero-subtext-color, rgba(255, 255, 255, 0.92)) !important;
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.45;
+  text-shadow: var(--hero-text-shadow, 0 1px 10px rgba(0, 0, 0, 0.35));
 }
 
 .btn-hero-primary {
   background-color: var(--dorado-pan);
-  color: #fff;
+  color: var(--hero-btn-text-color, #ffffff) !important;
   border-radius: 50px;
-  padding: 13px 32px;
+  padding: 13px 34px;
   font-weight: 700;
   border: 2px solid var(--dorado-pan);
-  transition: all 0.3s ease;
-  box-shadow: 0 8px 22px rgba(217, 130, 43, 0.4);
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
 }
 .btn-hero-primary:hover {
   background-color: var(--dorado-hover);
   border-color: var(--dorado-hover);
-  color: #fff;
-  transform: translateY(-3px);
-}
-
-.btn-hero-outline {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  border-radius: 50px;
-  padding: 13px 32px;
-  font-weight: 600;
-  border: 2px solid var(--crema-fondo);
-  backdrop-filter: blur(4px);
-  transition: all 0.3s ease;
-}
-.btn-hero-outline:hover {
-  background-color: var(--crema-fondo);
-  color: var(--verde-bosque);
-  transform: translateY(-3px);
+  color: var(--hero-btn-text-color, #ffffff) !important;
+  transform: translateY(-2px);
 }
 
 /* ============================================
@@ -434,13 +446,13 @@ h1, h2, h3, h4, .serif-font {
   position: relative;
   height: 225px;
   overflow: hidden;
-  background-color: #f3ede2;
+  background-color: var(--crema-fondo);
 }
 .product-img-wrapper::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.18) 0%, transparent 35%, rgba(0,0,0,0.04) 100%);
+  background: linear-gradient(to bottom, rgba(0,0,0,0.14) 0%, transparent 35%, rgba(0,0,0,0.03) 100%);
   pointer-events: none;
 }
 
@@ -448,10 +460,60 @@ h1, h2, h3, h4, .serif-font {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.6s cubic-bezier(0.165, 0.84, 0.44, 1);
+  transition: transform 0.5s cubic-bezier(0.165, 0.84, 0.44, 1);
 }
 .product-card:hover .product-img-wrapper img {
-  transform: scale(1.08);
+  transform: scale(1.06);
+}
+
+.product-img-placeholder {
+  width: 100%;
+  height: 100%;
+  background-color: var(--crema-fondo);
+  color: var(--color-primario, var(--verde-bosque));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.product-img-placeholder-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-color: var(--color-primario, var(--verde-bosque));
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.55rem;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.product-img-placeholder-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.cart-item-placeholder {
+  width: 66px;
+  height: 66px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  background-color: var(--crema-fondo);
+  color: var(--color-primario, var(--verde-bosque));
+  border: 1px solid var(--borde-calido);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
 }
 
 .badge-floating {
@@ -967,8 +1029,23 @@ footer {
     height: 44px;
   }
   .hero-section {
-    min-height: 74vh;
-    padding: 40px 0;
+    aspect-ratio: 4 / 3;
+    min-height: 360px;
+    max-height: 500px;
+    padding: 32px 0;
+  }
+  .hero-logo-emblem {
+    width: 92px;
+    height: 92px;
+    margin-bottom: 12px;
+  }
+  .hero-title {
+    font-size: clamp(1.75rem, 6.5vw, 2.35rem);
+    margin-bottom: 10px;
+  }
+  .hero-subtitle {
+    font-size: 0.98rem !important;
+    margin-bottom: 18px !important;
   }
   .section-padding {
     padding: 50px 0;
