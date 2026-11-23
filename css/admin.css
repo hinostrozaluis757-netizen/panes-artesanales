@@ -191,6 +191,167 @@ body {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-#tabPedidos, #tabProductos, #tabProductos .card, .kpi-card {
-  animation: fadeIn 0.5s ease-in-out forwards;
+#tabPedidos, #tabProductos, #tabProductos .card, .kpi-card, #tabDiseno {
+  animation: fadeIn 0.35s ease-in-out forwards;
+}
+
+/* ============================================
+   DISEÑO DE MI TIENDA (SELECTOR DE FOCO Y PREVIEW)
+   ============================================ */
+.diseno-foco-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 38px);
+  grid-template-rows: repeat(3, 38px);
+  gap: 6px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 8px;
+  width: fit-content;
+}
+
+.diseno-foco-btn {
+  border: 1.5px solid #ced4da;
+  background: #ffffff;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.diseno-foco-btn:hover {
+  border-color: #1B4D3E;
+  background: #eef5f2;
+}
+
+.diseno-foco-btn.active {
+  background: #1B4D3E;
+  border-color: #1B4D3E;
+  box-shadow: 0 2px 6px rgba(27, 77, 62, 0.3);
+}
+
+.diseno-foco-btn .foco-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6c757d;
+}
+
+.diseno-foco-btn.active .foco-dot {
+  background: #ffffff;
+  transform: scale(1.2);
+}
+
+.diseno-hero-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background-color: #1B4D3E;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+  cursor: crosshair;
+  user-select: none;
+}
+
+.diseno-hero-preview-desktop {
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  min-height: 210px;
+}
+
+.diseno-hero-preview-mobile {
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 4 / 3;
+  min-height: 240px;
+}
+
+.diseno-hero-preview-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.diseno-hero-preview-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(10, 15, 13, 0.40);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.diseno-hero-preview-content {
+  position: relative;
+  z-index: 2;
+  max-width: 88%;
+  pointer-events: none;
+}
+
+.diseno-hero-preview-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 50px;
+  border: 1px solid #D9822B;
+  background-color: rgba(217, 130, 43, 0.28);
+  margin-bottom: 8px;
+}
+
+.diseno-hero-preview-title {
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 8px;
+}
+
+.diseno-hero-preview-desktop .diseno-hero-preview-title {
+  font-size: clamp(1.2rem, 2.2vw, 1.75rem);
+}
+
+.diseno-hero-preview-mobile .diseno-hero-preview-title {
+  font-size: 1.25rem;
+}
+
+.diseno-hero-preview-sub {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  margin-bottom: 12px;
+}
+
+.diseno-hero-preview-btn {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 7px 18px;
+  border-radius: 50px;
+  background-color: #D9822B;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
+.admin-prod-placeholder {
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background-color: #1B4D3E;
+  font-size: 1.15rem;
 }

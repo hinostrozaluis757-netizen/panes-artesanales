@@ -96,7 +96,10 @@
 
   <!-- HERO (Theming dinámico multi-rubro con transición suave sin parpadeo) -->
   <section id="inicio" class="hero-section text-center">
-    <div id="heroImagenFondo" class="hero-bg-layer"></div>
+    <div id="heroImagenFondo" class="hero-bg-layer">
+      <img id="heroImagenElemento" class="hero-bg-img d-none" alt="" fetchpriority="high" decoding="async">
+      <div id="heroOverlayLayer" class="hero-overlay-layer"></div>
+    </div>
     <div class="container hero-content-wrapper">
       <div class="row justify-content-center">
         <div class="col-lg-8">
@@ -107,10 +110,9 @@
           </div>
           <span class="hero-badge" id="heroBadge"><i class="bi bi-stars me-1"></i> CATÁLOGO ONLINE</span>
           <h1 class="hero-title" id="heroTitulo">Cargando tienda...</h1>
-          <p class="lead mb-4 fs-5 text-light opacity-90" id="heroSubtitulo">Preparando la experiencia visual y los productos disponibles.</p>
-          <div class="d-flex justify-content-center gap-3 flex-wrap">
+          <p class="lead mb-4 fs-5 hero-subtitle" id="heroSubtitulo">Preparando la experiencia visual y los productos disponibles.</p>
+          <div class="d-flex justify-content-center">
             <a href="#carta" class="btn btn-hero-primary" id="heroPrimaryBtn"><i class="bi bi-journal-richtext me-1"></i> Ver Catálogo</a>
-            <a href="#locales" class="btn btn-hero-outline">Ubicación y Horarios</a>
           </div>
         </div>
       </div>

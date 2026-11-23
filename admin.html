@@ -69,6 +69,7 @@
           <li class="nav-item"><button class="nav-link" data-target="tabVentaExpress"><i class="bi bi-lightning-charge-fill me-1"></i> Venta Rápida</button></li>
           <li class="nav-item"><button class="nav-link" data-target="tabUbicacion"><i class="bi bi-geo-alt me-1"></i> Mi Ubicación</button></li>
           <li class="nav-item"><button class="nav-link" data-target="tabMetodosPago"><i class="bi bi-wallet2 me-1"></i> Métodos de Pago</button></li>
+          <li class="nav-item"><button class="nav-link" data-target="tabDiseno"><i class="bi bi-palette me-1"></i> Diseño de mi tienda</button></li>
         </ul>
         <a href="index.html" target="_blank" class="btn btn-sm btn-outline-success rounded-pill px-3 d-none d-sm-inline-flex align-items-center" id="btnVerTienda"><i class="bi bi-box-arrow-up-right me-1"></i> Ver tienda</a>
         <span class="small text-muted d-none d-md-inline badge bg-light text-dark px-3 py-2" id="userEmail"></span>
@@ -653,6 +654,218 @@
       </div>
     </div>
 
+    <!-- PESTAÑA 7: DISEÑO DE MI TIENDA -->
+    <div id="tabDiseno" class="d-none">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div>
+          <h4 class="fw-bold mb-0"><i class="bi bi-palette-fill text-success me-2"></i>Diseño de mi tienda</h4>
+          <p class="text-muted small mb-0">Personaliza la portada, el punto de enfoque, los textos y los colores de tu catálogo público.</p>
+        </div>
+        <span class="badge bg-light text-dark border rounded-pill px-3 py-2" id="disenoEstadoFuenteBadge">
+          Usando diseño del giro
+        </span>
+      </div>
+
+      <div id="disenoEstadoAlerta" class="alert d-none small mb-3" role="alert"></div>
+
+      <div class="row g-4">
+        <!-- COLUMNA IZQUIERDA: FORMULARIO DE DISEÑO -->
+        <div class="col-lg-5">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body">
+              <form id="formDisenoTienda" autocomplete="off" novalidate>
+                <!-- 1. FOTO DE PORTADA -->
+                <h6 class="fw-bold mb-2"><i class="bi bi-image me-1 text-success"></i> 1. Foto de portada</h6>
+                <div class="mb-3">
+                  <label for="disenoPortadaInput" class="form-label small fw-bold">Subir o reemplazar imagen</label>
+                  <input
+                    type="file"
+                    class="form-control"
+                    id="disenoPortadaInput"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  >
+                  <div class="form-text small">
+                    Solo JPG, PNG o WebP (máx. 5 MB). Se redimensiona a máx. 1600 px de ancho y se optimiza (~0.8) antes de subir.
+                  </div>
+                  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
+                    <span class="badge bg-secondary-subtle text-dark border small" id="disenoPortadaPesoInfo">
+                      Sin archivo nuevo seleccionado
+                    </span>
+                    <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnQuitarPortadaDiseno">
+                      <i class="bi bi-trash me-1"></i> Quitar foto propia
+                    </button>
+                  </div>
+                </div>
+
+                <hr class="my-3">
+
+                <!-- 2. PUNTO DE ENFOQUE Y OSCURIDAD DEL FILTRO -->
+                <h6 class="fw-bold mb-2"><i class="bi bi-crop me-1 text-success"></i> 2. Encuadre y lectura</h6>
+                <div class="row g-3 mb-3">
+                  <div class="col-sm-6">
+                    <label class="form-label small fw-bold d-block mb-1">
+                      Punto de enfoque: <span class="text-success" id="disenoFocoLabel">Centro</span>
+                    </label>
+                    <input type="hidden" id="disenoHeroFoco" value="center">
+                    <div class="diseno-foco-grid" id="disenoFocoGrid" role="radiogroup" aria-label="Selector de punto de enfoque de 9 posiciones">
+                      <button type="button" class="diseno-foco-btn" data-foco="left top" title="Arriba izquierda"><span class="foco-dot"></span></button>
+                      <button type="button" class="diseno-foco-btn" data-foco="top" title="Arriba centro"><span class="foco-dot"></span></button>
+                      <button type="button" class="diseno-foco-btn" data-foco="right top" title="Arriba derecha"><span class="foco-dot"></span></button>
+                      <button type="button" class="diseno-foco-btn" data-foco="left" title="Centro izquierda"><span class="foco-dot"></span></button>
+                      <button type="button" class="diseno-foco-btn active" data-foco="center" title="Centro"><span class="foco-dot"></span></button>
+                      <button type="button" class="diseno-foco-btn" data-foco="right" title="Centro derecha"><span class="foco-dot"></span></button>
+                      <button type="button" class="diseno-foco-btn" data-foco="left bottom" title="Abajo izquierda"><span class="foco-dot"></span></button>
+                      <button type="button" class="diseno-foco-btn" data-foco="bottom" title="Abajo centro"><span class="foco-dot"></span></button>
+                      <button type="button" class="diseno-foco-btn" data-foco="right bottom" title="Abajo derecha"><span class="foco-dot"></span></button>
+                    </div>
+                    <div class="form-text small">Elige una de las 9 posiciones o arrastra sobre la vista previa.</div>
+                  </div>
+                  <div class="col-sm-6">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <label for="disenoHeroOverlay" class="form-label small fw-bold mb-0">Oscuridad del filtro</label>
+                      <span class="badge bg-dark rounded-pill" id="disenoHeroOverlayVal">40%</span>
+                    </div>
+                    <input
+                      type="range"
+                      class="form-range mt-2"
+                      id="disenoHeroOverlay"
+                      min="0"
+                      max="80"
+                      step="5"
+                      value="40"
+                    >
+                    <div class="d-flex justify-content-between small text-muted">
+                      <span>0%</span>
+                      <span>40% (Recomendado)</span>
+                      <span>80%</span>
+                    </div>
+                    <div class="form-text small mt-1">Asegura que el título siempre se lea sobre cualquier foto.</div>
+                  </div>
+                </div>
+
+                <hr class="my-3">
+
+                <!-- 3. TÍTULO Y SUBTÍTULO DE PORTADA -->
+                <h6 class="fw-bold mb-2"><i class="bi bi-fonts me-1 text-success"></i> 3. Textos de la portada</h6>
+                <div class="mb-3">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <label for="disenoHeroTitulo" class="form-label small fw-bold mb-1">Título principal</label>
+                    <small class="text-muted" id="disenoHeroTituloCount">0 / 140</small>
+                  </div>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="disenoHeroTitulo"
+                    maxlength="140"
+                    placeholder="Se usará el título del giro si lo dejas vacío"
+                  >
+                </div>
+
+                <div class="mb-3">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <label for="disenoHeroSubtitulo" class="form-label small fw-bold mb-1">Subtítulo corto</label>
+                    <small class="text-muted" id="disenoHeroSubtituloCount">0 / 160</small>
+                  </div>
+                  <textarea
+                    class="form-control"
+                    id="disenoHeroSubtitulo"
+                    rows="2"
+                    maxlength="160"
+                    placeholder="Se usará el subtítulo del giro si lo dejas vacío"
+                  ></textarea>
+                </div>
+
+                <hr class="my-3">
+
+                <!-- 4. COLORES Y CONTRASTE -->
+                <h6 class="fw-bold mb-2"><i class="bi bi-droplet-half me-1 text-success"></i> 4. Colores de marca</h6>
+                <div class="row g-3 mb-3">
+                  <div class="col-6">
+                    <label for="disenoColorPrimarioHex" class="form-label small fw-bold">Color principal</label>
+                    <div class="input-group input-group-sm">
+                      <input type="color" class="form-control form-control-color" id="disenoColorPrimarioPicker" value="#1B4D3E" title="Elegir color principal">
+                      <input type="text" class="form-control font-monospace" id="disenoColorPrimarioHex" maxlength="7" placeholder="#1B4D3E">
+                    </div>
+                  </div>
+                  <div class="col-6">
+                    <label for="disenoColorSecundarioHex" class="form-label small fw-bold">Color secundario (Botón)</label>
+                    <div class="input-group input-group-sm">
+                      <input type="color" class="form-control form-control-color" id="disenoColorSecundarioPicker" value="#D9822B" title="Elegir color secundario">
+                      <input type="text" class="form-control font-monospace" id="disenoColorSecundarioHex" maxlength="7" placeholder="#D9822B">
+                    </div>
+                  </div>
+                </div>
+
+                <div id="disenoContrasteAviso" class="alert alert-warning d-none small py-2 mb-3" role="status"></div>
+
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-2 border-top">
+                  <button type="submit" class="btn btn-success fw-bold px-4" id="btnGuardarDisenoTienda">
+                    <i class="bi bi-check2-circle me-1"></i> Guardar cambios
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" id="btnRestaurarDisenoGiro">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Restaurar diseño del giro
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- COLUMNA DERECHA: VISTA PREVIA EN VIVO (ESCRITORIO Y CELULAR) -->
+        <div class="col-lg-7">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h6 class="fw-bold mb-0"><i class="bi bi-eye me-1 text-primary"></i> Vista Previa en Vivo</h6>
+                <div class="btn-group btn-group-sm" role="group" id="disenoPreviewModoGroup">
+                  <button type="button" class="btn btn-outline-dark active" data-modo="ambos">Ambos</button>
+                  <button type="button" class="btn btn-outline-dark" data-modo="escritorio"><i class="bi bi-laptop me-1"></i>Escritorio (1280 px)</button>
+                  <button type="button" class="btn btn-outline-dark" data-modo="celular"><i class="bi bi-phone me-1"></i>Celular (360 px)</button>
+                </div>
+              </div>
+
+              <!-- VISTA PREVIA ESCRITORIO (1280 px proporción 16:7) -->
+              <div id="disenoPreviewDesktopWrap" class="mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="small fw-bold text-muted"><i class="bi bi-laptop me-1"></i>Escritorio (1280 px · 16:7)</span>
+                  <span class="badge bg-light text-muted border small" id="disenoPreviewContrasteTag">Texto automático</span>
+                </div>
+                <div class="diseno-hero-preview diseno-hero-preview-desktop" id="disenoPreviewDesktopBox" title="Haz clic o arrastra para ajustar el punto de enfoque">
+                  <img id="disenoPreviewDesktopImg" class="diseno-hero-preview-img d-none" alt="Vista previa escritorio">
+                  <div id="disenoPreviewDesktopOverlay" class="diseno-hero-preview-overlay"></div>
+                  <div class="diseno-hero-preview-content">
+                    <span class="diseno-hero-preview-badge" id="disenoPreviewDesktopBadge">CATÁLOGO ONLINE</span>
+                    <h3 class="diseno-hero-preview-title" id="disenoPreviewDesktopTitulo">Título de portada</h3>
+                    <p class="diseno-hero-preview-sub" id="disenoPreviewDesktopSubtitulo">Subtítulo corto de tu tienda</p>
+                    <span class="diseno-hero-preview-btn" id="disenoPreviewDesktopBtn">Ver Catálogo</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VISTA PREVIA CELULAR (360 px proporción 4:3) -->
+              <div id="disenoPreviewMobileWrap">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="small fw-bold text-muted"><i class="bi bi-phone me-1"></i>Celular (360 px · 4:3)</span>
+                  <span class="small text-muted">Recorte móvil</span>
+                </div>
+                <div class="diseno-hero-preview diseno-hero-preview-mobile mx-auto" id="disenoPreviewMobileBox" title="Haz clic o arrastra para ajustar el punto de enfoque">
+                  <img id="disenoPreviewMobileImg" class="diseno-hero-preview-img d-none" alt="Vista previa celular">
+                  <div id="disenoPreviewMobileOverlay" class="diseno-hero-preview-overlay"></div>
+                  <div class="diseno-hero-preview-content">
+                    <span class="diseno-hero-preview-badge" id="disenoPreviewMobileBadge">CATÁLOGO ONLINE</span>
+                    <h4 class="diseno-hero-preview-title" id="disenoPreviewMobileTitulo">Título de portada</h4>
+                    <p class="diseno-hero-preview-sub" id="disenoPreviewMobileSubtitulo">Subtítulo corto de tu tienda</p>
+                    <span class="diseno-hero-preview-btn" id="disenoPreviewMobileBtn">Ver Catálogo</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -673,6 +886,17 @@
           <div class="row">
             <div class="col-6 mb-3"><label class="form-label small fw-bold">Precio (S/)</label><input type="number" step="0.1" min="0" class="form-control" id="pPrecio" required></div>
             <div class="col-6 mb-3"><label class="form-label small fw-bold">Categoría</label><select class="form-select" id="pCat" required></select></div>
+          </div>
+          <div class="mb-3 p-2 rounded-3 bg-light border">
+            <label for="pNuevaCategoriaInput" class="form-label small fw-bold mb-1">Crear o elegir categoría sugerida</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="text" class="form-control" id="pNuevaCategoriaInput" maxlength="60" placeholder="Escribe una nueva categoría...">
+              <button type="button" class="btn btn-outline-success fw-semibold" id="btnAgregarCategoriaAdmin">
+                <i class="bi bi-plus-lg me-1"></i>Usar categoría
+              </button>
+            </div>
+            <div class="small text-muted mb-1">Sugerencias para tu giro (toca para usar):</div>
+            <div class="d-flex flex-wrap gap-1" id="pCatSugerenciasGiro"></div>
           </div>
           <div class="alert alert-light border small py-2 mb-3 text-muted" id="pStockInfo">
             <i class="bi bi-info-circle me-1"></i>El producto se creará con stock 0. Luego podrás ingresar lotes desde el botón <strong>Lotes / Ingreso</strong>.
