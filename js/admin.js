@@ -4894,8 +4894,9 @@ async function guardarDisenoTiendaAdmin(e) {
 
   const oldHeroUrl = String(negocio.hero_imagen_url || '').trim();
   const oldStoragePath = extraerRutaBucketNegociosMedia(oldHeroUrl, tenantId);
+  const oldValidHeroUrl = esUrlBucketNegociosMediaAdmin(oldHeroUrl, tenantId) ? oldHeroUrl : null;
   let newUploadedPath = null;
-  let finalHeroImagenUrl = portadaMarcadaParaQuitar ? null : (oldHeroUrl || null);
+  let finalHeroImagenUrl = portadaMarcadaParaQuitar ? null : oldValidHeroUrl;
 
   try {
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();

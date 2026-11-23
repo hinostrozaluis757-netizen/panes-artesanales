@@ -73,10 +73,83 @@ COMMENT ON COLUMN public.negocios.hero_overlay IS
   'Intensidad de la capa oscura sobre la portada (0 a 80 %, por defecto 40).';
 
 -- =============================================================================
--- 2. RESTRICCIONES CHECK SOBRE LAS COLUMNAS DE DISEÑO
+-- 2. DIAGNÓSTICO PREVIO Y RESTRICCIONES CHECK SOBRE LAS COLUMNAS DE DISEÑO
 -- =============================================================================
+-- Consulta diagnóstica previa a ADD CONSTRAINT: lista cualquier fila existente
+-- que incumpliría alguna de las restricciones de diseño.
+SELECT
+  id,
+  slug,
+  color_primario,
+  color_secundario,
+  hero_titulo_custom,
+  hero_subtitulo_custom,
+  hero_imagen_url,
+  hero_foco,
+  hero_overlay
+FROM public.negocios
+WHERE (color_primario IS NOT NULL AND color_primario !~ '^#[0-9a-fA-F]{6}$')
+   OR (color_secundario IS NOT NULL AND color_secundario !~ '^#[0-9a-fA-F]{6}$')
+   OR (hero_titulo_custom IS NOT NULL AND length(hero_titulo_custom) > 140)
+   OR (hero_subtitulo_custom IS NOT NULL AND length(hero_subtitulo_custom) > 160)
+   OR (
+     hero_imagen_url IS NOT NULL
+     AND hero_imagen_url !~ '^https://cqoqabnuzjxozxmcvjnl\.supabase\.co/storage/v1/object/public/negocios-media/[0-9a-fA-F-]{36}/portada-[0-9]+\.(webp|jpg|jpeg|png)$'
+   )
+   OR (
+     hero_foco IS NULL
+     OR hero_foco NOT IN (
+       'center', 'top', 'bottom', 'left', 'right',
+       'left top', 'right top', 'left bottom', 'right bottom'
+     )
+   )
+   OR (hero_overlay IS NULL OR hero_overlay < 0 OR hero_overlay > 80);
+
 DO $$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.negocios'::regclass
+      AND conname = 'negocios_color_primario_chk'
+  ) THEN
+    ALTER TABLE public.negocios
+      ADD CONSTRAINT negocios_color_primario_chk
+      CHECK (color_primario IS NULL OR color_primario ~ '^#[0-9a-fA-F]{6}$');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.negocios'::regclass
+      AND conname = 'negocios_color_secundario_chk'
+  ) THEN
+    ALTER TABLE public.negocios
+      ADD CONSTRAINT negocios_color_secundario_chk
+      CHECK (color_secundario IS NULL OR color_secundario ~ '^#[0-9a-fA-F]{6}$');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.negocios'::regclass
+      AND conname = 'negocios_hero_titulo_custom_chk'
+  ) THEN
+    ALTER TABLE public.negocios
+      ADD CONSTRAINT negocios_hero_titulo_custom_chk
+      CHECK (hero_titulo_custom IS NULL OR length(hero_titulo_custom) <= 140);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.negocios'::regclass
+      AND conname = 'negocios_hero_imagen_url_chk'
+  ) THEN
+    ALTER TABLE public.negocios
+      ADD CONSTRAINT negocios_hero_imagen_url_chk
+      CHECK (
+        hero_imagen_url IS NULL
+        OR hero_imagen_url ~ '^https://cqoqabnuzjxozxmcvjnl\.supabase\.co/storage/v1/object/public/negocios-media/[0-9a-fA-F-]{36}/portada-[0-9]+\.(webp|jpg|jpeg|png)$'
+      );
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'public.negocios'::regclass
@@ -123,19 +196,6 @@ END $$;
 -- =============================================================================
 -- 3. AJUSTE DEL TRIGGER trg_proteger_negocios Y AUDITORÍA DE DISEÑO
 -- =============================================================================
--- Verificación realizada sobre sql/10_gobernanza_y_blindaje.sql:
--- 1) La función public.proteger_columnas_negocios() original bloqueaba owner_id,
---    created_at, activo y slug, permitiendo por diseño (lista negra) que el dueño
---    actualice las columnas visuales.
--- 2) Ajustes aplicados aquí:
---    - Bloquear también cambios sobre id (PK).
---    - Bloquear cambios sobre plan, fecha_vencimiento_plan y motivo_suspension
---      vía to_jsonb(NEW)/to_jsonb(OLD) por si sql/09 fue ejecutado en la instancia
---      y dichas columnas existen en public.negocios además de negocios_gobierno.
---    - Permitir explícitamente al dueño cambiar hero_imagen_url, hero_titulo_custom,
---      hero_subtitulo_custom, hero_foco, hero_overlay, color_primario,
---      color_secundario, logo_url, direccion, google_maps_url, whatsapp y nombre.
-
 CREATE OR REPLACE FUNCTION public.proteger_columnas_negocios()
 RETURNS trigger
 LANGUAGE plpgsql
